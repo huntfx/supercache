@@ -1,7 +1,16 @@
-"""Cache/memoize results from functions.
+"""Cache/memoize function outputs.
+
+Supported:
+    functions
+    generators/iterators
+    methods
+    properties
+
+Limitations:
+    Unhashable inputs are not supported
 
 Author: Peter Hunt
-Modified: 11/9/2019
+Modified: 12/9/2019
 """
 from __future__ import absolute_import
 
@@ -33,11 +42,34 @@ def add_metaclass(metaclass):
 
 
 class CacheError(Exception):
+    """Used if there's an error when caching."""
+    pass
+
+
+class UnhashableError(CacheError):
+    """The inputs contain unhashable types"""
+    def __init__(self, *args, **kwargs):
+        default_message = 'unhashable inputs incompatible with caching'
+        if not (args or kwargs):
+            args = (default_message,)
+        super(UnhashableError, self).__init__(*args, **kwargs)
+
+
+class InvalidResult(object):
+    """Placeholder for an empty result, since result can be None.
+    This just ensures any result can be used without issues.
+    """
     pass
 
 
 class GeneratorCache(object):
-    """Cache the results from a generator."""
+    """Cache the results from a generator.
+    This will act as a normal generator, but append to a list.
+    Once it is called again, if possible, the list will be read.
+
+    Only use this when the calculations are heavy. If the result is
+    simply very large, convert to a list instead as it'll be faster.
+    """
     def __init__(self, func, *args, **kwargs):
         self.func = func(*args, **kwargs)
         self.cache = []
@@ -68,52 +100,109 @@ class Memoize(object):
     Data = {}
     def __init__(self, parent, func, group, timeout=None, key_args=None, key_kwargs=None):
         self.parent = parent
-        self.func = func
+        self.__fn__ = func
         self.group = group
         self.timeout = timeout
         self.args = key_args
         self.kwargs = key_kwargs
 
-        self.generator = inspect.isgeneratorfunction(self.func)
+        self.generator = inspect.isgeneratorfunction(self.__fn__)
+        self.property = isinstance(self.__fn__, property)
+        self._property_fset = self._property_fget = self._property_fdel = None
 
-        self.hash = hash(self.func)
-        if self.group not in self.Data:
-            self.Data[self.group] = {}
+        self.hash = hash(self.__fn__)
+        if self.group not in Memoize.Data:
+            Memoize.Data[self.group] = {}
         if self.hash not in self.Data[self.group]:
-            self.Data[self.group][self.hash] = {}
+            Memoize.Data[self.group][self.hash] = {}
 
     def __repr__(self):
-        return self.func.__repr__()
+        """Pretend it is the wrapped function."""
+        return self.__fn__.__repr__()
+
+    def __get__(self, instance, owner):
+        """Get a class method or property."""
+        if self.property:
+            return self.__call__(instance)
+        func = partial(self.__call__, instance)
+        func.__fn__ = self.__fn__
+        return func
+
+    def __set__(self, instance, value):
+        """Set a value if property.setter has been set."""
+        if not self.property or not self._property_fset:
+            raise AttributeError("can't set attribute")
+        self._property_fset(instance, value)
+        self.invalidate(instance)
+
+    def __delete__(self, instance):
+        """Delete a value if property.deleter has been set."""
+        if not self.property or not self._property_fdel:
+            raise AttributeError("can't delete attribute")
+        self._property_fdel(instance)
+        self.invalidate(instance)
+
+    def setter(self, fset):
+        """Define a setter wrap for a property."""
+        if not self.property:
+            raise AttributeError("'{}' object has no attribute 'setter'".format(self.__class__.__name__))
+        self._property_fset = fset
+        return self
+        
+    def deleter(self, fdel):
+        """Define a deleter wrap for a property."""
+        if not self.property:
+            raise AttributeError("'{}' object has no attribute 'deleter'".format(self.__class__.__name__))
+        self._property_fdel = fdel
+        return self
 
     def __call__(self, *args, **kwargs):
         """Find if the result exists in cache or generate a new result."""
         fingerprint = self.fingerprint(*args, **kwargs)
+
+        # Check the dictionaries contain all the keys
         try:
-            data = self.Data[self.group][self.hash]
+            data = Memoize.Data[self.group][self.hash]
         except KeyError:
-            data = self.Data[self.group][self.hash] = {}
-        
+            data = Memoize.Data[self.group][self.hash] = {}
+        if fingerprint not in data:
+            data[fingerprint] = {
+                'result': InvalidResult,
+                'time': 0,
+                'hits': 0,
+                'misses': 0,
+            }
+        data = data[fingerprint]
+
         # Refresh the function
-        if fingerprint not in data or self.timeout is not None and time.time() - data[fingerprint][1] > self.timeout:
+        if data['result'] == InvalidResult or self.timeout is not None and time.time()-data['time'] > self.timeout:
             if self.generator:
-                result = GeneratorCache(self.func, *args, **kwargs)
+                result = GeneratorCache(self.__fn__, *args, **kwargs)
+            elif self.property:
+                result = self.__fn__.fget(*args, **kwargs)
             else:
-                result = self.func(*args, **kwargs)
-            data[fingerprint] = (result, time.time())
+                result = self.__fn__(*args, **kwargs)
+            data['result'] = result
+            data['time'] = time.time()
+            data['misses'] += 1
 
-        # Reset the generator counter
-        elif self.generator:
-            data[fingerprint][0].current = 0
+        else:
+            data['hits'] += 1
 
-        return data[fingerprint][0]
+            # Reset the generator counter
+            if self.generator:
+                data['result'].current = 0
+                data['hits'] += 1
 
-    def __get__(self, instance, owner):
-        return partial(self.__call__, instance)
+        return data['result']
 
     def fingerprint(self, *args, **kwargs):
         """Generate a unique fingerprint for the function."""
+        if self.property:
+            return (hash(self.__fn__), hash(args[0]))
+
         # Generate a dict containing all the values
-        func_params, func_args, func_kwargs, func_defaults = inspect.getargspec(self.func)
+        func_params, func_args, func_kwargs, func_defaults = inspect.getargspec(self.__fn__)
         if func_defaults is None:
             default_values = {}
         else:
@@ -166,15 +255,27 @@ class Memoize(object):
         try:
             return tuple(map(hash, hash_list))
         except TypeError:
-            raise CacheError('cannot cache with unhashable arguments')
+            raise UnhashableError
+
+    def invalidate(self, *args, **kwargs):
+        """Invalidate the cache for a certain input.
+        This should only be used if the data has changed.
+        """
+        data = Memoize.Data[self.group][self.hash]
+        if data:
+            fingerprint = self.fingerprint(*args, **kwargs)
+            if fingerprint in data:
+                del data[fingerprint]
+                return True
+        return False
 
     @property
     def cache(self):
-        return self.Data[self.group][self.hash]
+        return Memoize.Data[self.group][self.hash]
 
     @cache.deleter
     def cache(self):
-        del self.Data[self.group][self.hash]
+        Memoize.Data[self.group][self.hash] = {}
 
 
 class CacheMeta(type):
@@ -258,9 +359,10 @@ if __name__ == '__main__':
             self.n = n
         def __hash__(self):
             return hash(self.n)
-        @Cache(kargs=['self'])
+        @Cache(args=[0])
         def unique_id(self):
             return uuid.uuid4()
+
 
     first_id = Test(1).unique_id()
     assert first_id == Test(1).unique_id()
@@ -275,3 +377,29 @@ if __name__ == '__main__':
     assert 1 in gen()
     assert 1 in gen()
     assert list(gen()) == list(gen())
+
+    # Property test
+    class Test(object):
+        def __init__(self):
+            self.n = uuid.uuid4()
+        @Cache()
+        @property
+        def test(self):
+            return self.n
+        @test.setter
+        def test(self, value):
+            self.n = value
+        @test.deleter
+        def test(self):
+            self.n = uuid.uuid4()
+
+    t1 = Test()
+    first_value = t1.test
+    assert first_value == t1.test
+    t1.test = second_value = uuid.uuid4()
+    assert first_value != second_value
+    del t1.test
+    assert second_value != t1.test
+
+    t2 = Test()
+    assert t2.test != t1.test
