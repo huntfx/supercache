@@ -5,16 +5,24 @@ Supported:
     generators/iterators
     methods
     properties
+    *args
+    **kwargs
 
 Limitations:
     Unhashable inputs are not supported
 
+TODO:
+    Cache *args with slice
+    Cache **kwargs with modified regex
+    Ignore particular args or kwargs
+
 Author: Peter Hunt
-Modified: 12/9/2019
+Modified: 16/9/2019
 """
 from __future__ import absolute_import
 
 import inspect
+import sys
 import time
 from functools import partial
 from types import GeneratorType
@@ -98,13 +106,14 @@ class GeneratorCache(object):
 
 class Memoize(object):
     Data = {}
-    def __init__(self, parent, func, group, timeout=None, key_args=None, key_kwargs=None):
+    def __init__(self, parent, func, group, timeout=None, key_args=None, key_kwargs=None, ignore_unhashable=True):
         self.parent = parent
         self.__fn__ = func
         self.group = group
         self.timeout = timeout
         self.args = key_args
         self.kwargs = key_kwargs
+        self.ignore_unhashable = ignore_unhashable
 
         self.generator = inspect.isgeneratorfunction(self.__fn__)
         self.property = isinstance(self.__fn__, property)
@@ -158,7 +167,15 @@ class Memoize(object):
 
     def __call__(self, *args, **kwargs):
         """Find if the result exists in cache or generate a new result."""
-        fingerprint = self.fingerprint(*args, **kwargs)
+        # Skip cache if result is unhashable
+        try:
+            fingerprint = self.fingerprint(*args, **kwargs)
+        except UnhashableError:
+            if self.ignore_unhashable:
+                if self.property:
+                    return self.__fn__.fget(*args, **kwargs)
+                return self.__fn__(*args, **kwargs)
+            raise
 
         # Check the dictionaries contain all the keys
         try:
@@ -198,59 +215,78 @@ class Memoize(object):
 
     def fingerprint(self, *args, **kwargs):
         """Generate a unique fingerprint for the function."""
-        if self.property:
-            return (hash(self.__fn__), hash(args[0]))
-
-        # Generate a dict containing all the values
-        func_params, func_args, func_kwargs, func_defaults = inspect.getargspec(self.__fn__)
-        if func_defaults is None:
-            default_values = {}
+        # Calculate parameters and default values
+        if sys.version[0] == '2':
+            argument_data = inspect.getargspec(self.__fn__.fget if self.property else self.__fn__)
+            parameters = argument_data.args
+            if argument_data.defaults is None:
+                default_values = {}
+            else:
+                default_values = dict(zip(reversed(parameters), reversed(argument_data.defaults)))
         else:
-            default_values = dict(zip(reversed(func_params), reversed(func_defaults)))
+            argument_data = inspect.getfullargspec(self.__fn__.fget if self.property else self.__fn__)
+            parameters = argument_data.args + argument_data.kwonlyargs
+            default_values = argument_data.kwonlydefaults or {}
 
         hash_list = []
-
+        arg_request = self.args
+        kwarg_request = self.kwargs
         num_args = len(args)
-        for i in self.args:
-            # Argument is provided
-            if i < num_args:
-                hash_list.append(args[i])
-            else:
-                # Argument is provided as a kwarg
-                try:
-                    param = func_params[i]
-                except IndexError:
-                    param = None
-                if param in kwargs:
-                    hash_list.append(kwargs[param])
-                # Argument is not provided
+
+        # If nothing was defined, then record all inputs
+        # Build the list of args first to take all possible parameters
+        # Then add every kwarg that was input via **kwargs
+        if arg_request is None and kwarg_request is None and parameters:
+            arg_request = range(max(len(parameters), len(args)))
+            kwarg_request = sorted(key for key in kwargs if key not in default_values)
+            
+        if arg_request is not None:
+            for i in arg_request:
+                # Argument is provided normally - args=[0, 1, 2] | func('x', 'y', 'z')
+                if i < num_args:
+                    hash_list.append(args[i])
                 else:
+                    # Argument is provided as a kwarg - args=[0, 1, 2] | func(a='x', b='y', c='z')
                     try:
-                        hash_list.append(default_values[param])
-                    # Skip any KeyError as its an invalid argument TypeError
-                    except KeyError:
-                        pass
+                        param = parameters[i]
+                    except IndexError:
+                        param = None
 
-        # Keyword arguments are set as arguments
-        # Setup a dict to be used when parsing kwargs
+                    # The same argument and kwarg is provided - args=[0], kwargs=['a'] | func(a='x')
+                    if param in kwargs:
+                        hash_list.append(kwargs[param])
+
+                    # Argument is not provided - args=[0, 1, 2] | func()
+                    # A KeyError here can mask an invalid argument TypeError,
+                    #  but it can also mean an index higher than the *args count.
+                    else:
+                        hash_list.append(default_values.get(param))
+
+        # Convert args to kwargs (see below for example)
+        # Start the loop instead of from the latest index, to handle cases
+        #  where one parameter is defined as both an arg and a kwarg.
         argument_kwargs = {}
-        if self.args:
-            i += 1
-            while i < num_args:
-                param = func_params[i]
+        try:
+            for i in range(num_args):
+                param = parameters[i]
                 argument_kwargs[param] = args[i]
-                i += 1
+        except IndexError:
+            pass
 
-        for key in self.kwargs:
-            # Keyword argument is provided
-            if key in kwargs:
-                hash_list.append(kwargs[key])
-            # Keyword argument is given without a keyword
-            elif key in argument_kwargs:
-                hash_list.append(argument_kwargs[key])
-            # Keyword argument is not provided
-            else:
-                hash_list.append(default_values.get(key, None))
+        if kwarg_request is not None:
+            for key in kwarg_request:
+                # Keyword argument is provided
+                if key in kwargs:
+                    hash_list.append(kwargs[key])
+
+                # Keyword arguments are input as arguments - kwargs=['a', 'b', 'c'] | func('x', 'y', 'z')
+                elif key in argument_kwargs:
+                    hash_list.append(argument_kwargs[key])
+
+                # Keyword argument is not provided - kwargs=['b'] | func(123)
+                # It will either use the default value, or None if it's expected from **kwargs
+                else:
+                    hash_list.append(default_values.get(key, None))
 
         try:
             return tuple(map(hash, hash_list))
@@ -290,32 +326,49 @@ class CacheMeta(type):
 
 @add_metaclass(CacheMeta)
 class Cache(object):
-    def __init__(self, args=None, kwargs=None, timeout=None, group=None):
+    def __init__(self, args=None, kwargs=None, timeout=None, group=None, ignore_unhashable=True):
         """Setup the cache.
 
-        Each record unique to the function, with optional arguments
-        that will output a different result. For example, print_values
-        will not affect the result, but output_json will.
+        Each cache is unique to the specific function, with optional
+        arguments that will differntiate the outputs. Not all inputs
+        will change the output, so any that do must be defined.
+        
+        Take a function "format_data", that has the parameters
+        "print_messages" and "json_convert". No matter if printing
+        or not, the output won't change, so we can ignore this.
+        However, the value of "json_convert" will change the output,
+        so that needs to be included in the cache.
 
         These can be put in as either arg indexes or kwarg strings.
+        Any argument is compatible with both ways, with the exception
+        of *args and **kwargs
 
         Example:
             # Cache on the values of "a", "b", "c" and "d"
             >>> @Cache(args=(0, 1), kwargs=['c', 'd'], timeout=60)
             >>> def func(a, b=2, c=3, **kwargs): pass
 
-        Groups:
-            For easier deletion of specific things, a group can be set.
-            Either pass in "group" as an argument, or set it at the start
+        Parameters:
+            args (list): Indexes of each argument to cache
+
+            kwargs (list): Text of each keyword argument to cache
+
+            timeout (int): How many seconds the cache is valid for
+                If set to None, the timeout will be unlimited
+
+            group (str): Define all cache under a group.
+                This allows for easier deleting of specific things.
+                This parameter is equivelent to using Cache[group].
+
+            ignore_unhashable (bool): Chose to ignore if parameters
+                are not hashable. If not ignored, an UnhashableError
+                exception will be raised.
         """
-        if args is None:
-            args = ()
-        if kwargs is None:
-            kwargs = {}
         self.args = args
         self.kwargs = kwargs
         self.timeout = timeout
         self.group = group
+        self.ignore_unhashable = ignore_unhashable
 
     def __call__(self, func):
         return Memoize(
@@ -324,6 +377,7 @@ class Cache(object):
             timeout=self.timeout,
             key_args=self.args,
             key_kwargs=self.kwargs,
+            ignore_unhashable=self.ignore_unhashable,
         )
 
 
@@ -343,13 +397,12 @@ if __name__ == '__main__':
 
     # Class test (no arguments)
     class Test(object):
-        @Cache()
+        @Cache(args=[])
         def unique_id(self):
             return uuid.uuid4()
 
     first_id = Test().unique_id()
     assert first_id == Test().unique_id()
-    
     second_id = Test().unique_id()
     assert second_id == first_id
 
@@ -363,7 +416,6 @@ if __name__ == '__main__':
         def unique_id(self):
             return uuid.uuid4()
 
-
     first_id = Test(1).unique_id()
     assert first_id == Test(1).unique_id()
     assert first_id != Test(2).unique_id()
@@ -371,6 +423,7 @@ if __name__ == '__main__':
     # Generator test
     @Cache(timeout=5)
     def gen():
+        alfdaf = 3
         for i in range(3):
             yield i
             yield uuid.uuid4()
