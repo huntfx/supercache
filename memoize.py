@@ -1,12 +1,16 @@
 """Cache/memoize function outputs.
+See Cache class for instructions.
 
 Supported:
     functions
     generators/iterators
     methods
     properties
+    lambda
     *args
     **kwargs
+    *args_ignore
+    **kwargs_ignore
 
 Limitations:
     Unhashable inputs are not supported
@@ -14,11 +18,8 @@ Limitations:
 TODO:
     Cache *args with slice
     Cache **kwargs with modified regex
-    Ignore particular args or kwargs
-
-Author: Peter Hunt
-Modified: 16/9/2019
 """
+
 from __future__ import absolute_import
 
 import inspect
@@ -30,7 +31,7 @@ from types import GeneratorType
 
 def add_metaclass(metaclass):
     """Class decorator for creating a class with a metaclass.
-    
+
     Source: six.py
     """
     def wrapper(cls):
@@ -106,18 +107,26 @@ class GeneratorCache(object):
 
 class Memoize(object):
     Data = {}
-    def __init__(self, parent, func, group, timeout=None, key_args=None, key_kwargs=None, ignore_unhashable=True):
+    def __init__(self, parent, func, group, timeout=None, force_hashable=True, optimise=True,
+                 args_cache=None, kwargs_cache=None, args_ignore=None, kwargs_ignore=None):
         self.parent = parent
         self.__fn__ = func
         self.group = group
         self.timeout = timeout
-        self.args = key_args
-        self.kwargs = key_kwargs
-        self.ignore_unhashable = ignore_unhashable
+        self.args = args_cache
+        self.kwargs = kwargs_cache
+        self.args_ignore = set(args_ignore)
+        self.kwargs_ignore = set(kwargs_ignore)
+        self.force_hashable = force_hashable
+        self.optimise = optimise
 
         self.generator = inspect.isgeneratorfunction(self.__fn__)
         self.property = isinstance(self.__fn__, property)
         self._property_fset = self._property_fget = self._property_fdel = None
+        if self.property:
+            self.generator = inspect.isgeneratorfunction(self.__fn__.fget)
+        else:
+            self.generator = inspect.isgeneratorfunction(self.__fn__)
 
         self.hash = hash(self.__fn__)
         if self.group not in Memoize.Data:
@@ -157,7 +166,7 @@ class Memoize(object):
             raise AttributeError("'{}' object has no attribute 'setter'".format(self.__class__.__name__))
         self._property_fset = fset
         return self
-        
+
     def deleter(self, fdel):
         """Define a deleter wrap for a property."""
         if not self.property:
@@ -171,7 +180,7 @@ class Memoize(object):
         try:
             fingerprint = self.fingerprint(*args, **kwargs)
         except UnhashableError:
-            if self.ignore_unhashable:
+            if not self.force_hashable:
                 if self.property:
                     return self.__fn__.fget(*args, **kwargs)
                 return self.__fn__(*args, **kwargs)
@@ -192,13 +201,15 @@ class Memoize(object):
         data = data[fingerprint]
 
         # Refresh the function
-        if data['result'] == InvalidResult or self.timeout is not None and time.time()-data['time'] > self.timeout:
+        if data['result'] is InvalidResult or self.timeout is not None and time.time()-data['time'] > self.timeout:
+            exec_func = self.__fn__.fget if self.property else self.__fn__
             if self.generator:
-                result = GeneratorCache(self.__fn__, *args, **kwargs)
-            elif self.property:
-                result = self.__fn__.fget(*args, **kwargs)
+                if self.optimise:
+                    result = tuple(exec_func(*args, **kwargs))
+                else:
+                    result = GeneratorCache(exec_func, *args, **kwargs)
             else:
-                result = self.__fn__(*args, **kwargs)
+                result = exec_func(*args, **kwargs)
             data['result'] = result
             data['time'] = time.time()
             data['misses'] += 1
@@ -207,9 +218,8 @@ class Memoize(object):
             data['hits'] += 1
 
             # Reset the generator counter
-            if self.generator:
+            if self.generator and not self.optimise:
                 data['result'].current = 0
-                data['hits'] += 1
 
         return data['result']
 
@@ -233,34 +243,48 @@ class Memoize(object):
         kwarg_request = self.kwargs
         num_args = len(args)
 
-        # If nothing was defined, then record all inputs
         # Build the list of args first to take all possible parameters
         # Then add every kwarg that was input via **kwargs
-        if arg_request is None and kwarg_request is None and parameters:
+        if not self.args and not self.kwargs:
             arg_request = range(max(len(parameters), len(args)))
             kwarg_request = sorted(key for key in kwargs if key not in default_values)
-            
-        if arg_request is not None:
+
+        # Match up args_ignore and kwargs_ignore
+        if self.args_ignore:
+            for index in self.args_ignore:
+                try:
+                    self.kwargs_ignore.add(parameters[index])
+                except (KeyError, IndexError):
+                    pass
+        if self.kwargs_ignore:
+            for parameter in self.kwargs_ignore:
+                try:
+                    self.args_ignore.add(parameters.index(parameter))
+                except ValueError:
+                    pass
+
+        if arg_request:
             for i in arg_request:
-                # Argument is provided normally - args=[0, 1, 2] | func('x', 'y', 'z')
-                if i < num_args:
-                    hash_list.append(args[i])
-                else:
-                    # Argument is provided as a kwarg - args=[0, 1, 2] | func(a='x', b='y', c='z')
-                    try:
-                        param = parameters[i]
-                    except IndexError:
-                        param = None
-
-                    # The same argument and kwarg is provided - args=[0], kwargs=['a'] | func(a='x')
-                    if param in kwargs:
-                        hash_list.append(kwargs[param])
-
-                    # Argument is not provided - args=[0, 1, 2] | func()
-                    # A KeyError here can mask an invalid argument TypeError,
-                    #  but it can also mean an index higher than the *args count.
+                if i not in self.args_ignore:
+                    # Argument is provided normally - args=[0, 1, 2] | func('x', 'y', 'z')
+                    if i < num_args:
+                        hash_list.append(args[i])
                     else:
-                        hash_list.append(default_values.get(param))
+                        # Argument is provided as a kwarg - args=[0, 1, 2] | func(a='x', b='y', c='z')
+                        try:
+                            param = parameters[i]
+                        except IndexError:
+                            param = None
+
+                        # The same argument and kwarg is provided - args=[0], kwargs=['a'] | func(a='x')
+                        if param in kwargs:
+                            hash_list.append(kwargs[param])
+
+                        # Argument is not provided - args=[0, 1, 2] | func()
+                        # A KeyError here can mask an invalid argument TypeError,
+                        #  but it can also mean an index higher than the *args count.
+                        else:
+                            hash_list.append(default_values.get(param))
 
         # Convert args to kwargs (see below for example)
         # Start the loop instead of from the latest index, to handle cases
@@ -268,25 +292,27 @@ class Memoize(object):
         argument_kwargs = {}
         try:
             for i in range(num_args):
-                param = parameters[i]
-                argument_kwargs[param] = args[i]
+                if i not in self.args_ignore:
+                    param = parameters[i]
+                    argument_kwargs[param] = args[i]
         except IndexError:
             pass
 
-        if kwarg_request is not None:
+        if kwarg_request:
             for key in kwarg_request:
-                # Keyword argument is provided
-                if key in kwargs:
-                    hash_list.append(kwargs[key])
+                if key not in self.kwargs_ignore:
+                    # Keyword argument is provided
+                    if key in kwargs:
+                        hash_list.append(kwargs[key])
 
-                # Keyword arguments are input as arguments - kwargs=['a', 'b', 'c'] | func('x', 'y', 'z')
-                elif key in argument_kwargs:
-                    hash_list.append(argument_kwargs[key])
+                    # Keyword arguments are input as arguments - kwargs=['a', 'b', 'c'] | func('x', 'y', 'z')
+                    elif key in argument_kwargs:
+                        hash_list.append(argument_kwargs[key])
 
-                # Keyword argument is not provided - kwargs=['b'] | func(123)
-                # It will either use the default value, or None if it's expected from **kwargs
-                else:
-                    hash_list.append(default_values.get(key, None))
+                    # Keyword argument is not provided - kwargs=['b'] | func(123)
+                    # It will either use the default value, or None if it's expected from **kwargs
+                    else:
+                        hash_list.append(default_values.get(key, None))
 
         try:
             return tuple(map(hash, hash_list))
@@ -307,10 +333,12 @@ class Memoize(object):
 
     @property
     def cache(self):
+        """View the cache currently stored."""
         return Memoize.Data[self.group][self.hash]
 
     @cache.deleter
     def cache(self):
+        """Add a way to delete the cache."""
         Memoize.Data[self.group][self.hash] = {}
 
 
@@ -326,13 +354,13 @@ class CacheMeta(type):
 
 @add_metaclass(CacheMeta)
 class Cache(object):
-    def __init__(self, args=None, kwargs=None, timeout=None, group=None, ignore_unhashable=True):
+    def __init__(self, *args, **kwargs):
         """Setup the cache.
 
         Each cache is unique to the specific function, with optional
         arguments that will differntiate the outputs. Not all inputs
         will change the output, so any that do must be defined.
-        
+
         Take a function "format_data", that has the parameters
         "print_messages" and "json_convert". No matter if printing
         or not, the output won't change, so we can ignore this.
@@ -345,13 +373,13 @@ class Cache(object):
 
         Example:
             # Cache on the values of "a", "b", "c" and "d"
-            >>> @Cache(args=(0, 1), kwargs=['c', 'd'], timeout=60)
+            >>> @Cache(0, 1, 'c', 'd', timeout=60)
             >>> def func(a, b=2, c=3, **kwargs): pass
 
         Parameters:
-            args (list): Indexes of each argument to cache
-
-            kwargs (list): Text of each keyword argument to cache
+            args (list): Indexes or text of each argument to cache.
+                If the first argument is set to Cache.All, then every
+                input argument will be used.
 
             timeout (int): How many seconds the cache is valid for
                 If set to None, the timeout will be unlimited
@@ -360,28 +388,55 @@ class Cache(object):
                 This allows for easier deleting of specific things.
                 This parameter is equivelent to using Cache[group].
 
-            ignore_unhashable (bool): Chose to ignore if parameters
+            ignore (list): Indexes or text of each argument to ignore
+
+            force_hashable (bool): Chose to ignore if parameters
                 are not hashable. If not ignored, an UnhashableError
                 exception will be raised.
+
+            optimise(bool): Convert generators to tuples.
+                This will give MUCH faster access, and is recommended
+                to be enabled whenever a generator is in use.
+                It is not enabled by default for complatibility.
+                In the future this could contain other tweaks too.
         """
-        self.args = args
-        self.kwargs = kwargs
-        self.timeout = timeout
-        self.group = group
-        self.ignore_unhashable = ignore_unhashable
+        self.args = []
+        self.kwargs = []
+        self.args_ignore = []
+        self.kwargs_ignore = []
+        for arg in args:
+            if isinstance(arg, int):
+                self.args.append(arg)
+            else:
+                self.kwargs.append(arg)
+
+        for arg in kwargs.get('ignore', []):
+            if isinstance(arg, int):
+                self.args_ignore.append(arg)
+            else:
+                self.kwargs_ignore.append(arg)
+
+        self.timeout = kwargs.get('timeout')
+        self.group = kwargs.get('group')
+        self.force_hashable = kwargs.get('force_hashable')
+        self.optimise = kwargs.get('optimise')
 
     def __call__(self, func):
         return Memoize(
             self, func,
             group=self.group,
             timeout=self.timeout,
-            key_args=self.args,
-            key_kwargs=self.kwargs,
-            ignore_unhashable=self.ignore_unhashable,
+            args_cache=self.args,
+            kwargs_cache=self.kwargs,
+            args_ignore=self.args_ignore,
+            kwargs_ignore=self.kwargs_ignore,
+            force_hashable=self.force_hashable,
+            optimise=self.optimise,
         )
 
 
 if __name__ == '__main__':
+    import random
     import uuid
 
     # Function test
@@ -397,7 +452,7 @@ if __name__ == '__main__':
 
     # Class test (no arguments)
     class Test(object):
-        @Cache(args=[])
+        @Cache(ignore=['self'])
         def unique_id(self):
             return uuid.uuid4()
 
@@ -412,7 +467,7 @@ if __name__ == '__main__':
             self.n = n
         def __hash__(self):
             return hash(self.n)
-        @Cache(args=[0])
+        @Cache(ignore=['validate'])
         def unique_id(self):
             return uuid.uuid4()
 
@@ -421,15 +476,23 @@ if __name__ == '__main__':
     assert first_id != Test(2).unique_id()
 
     # Generator test
-    @Cache(timeout=5)
+    @Cache(optimise=False)
     def gen():
-        alfdaf = 3
         for i in range(3):
             yield i
             yield uuid.uuid4()
+
     assert 1 in gen()
     assert 1 in gen()
     assert list(gen()) == list(gen())
+    assert not isinstance(gen(), tuple)
+
+    @Cache(optimise=True)
+    def gen():
+        for i in range(3):
+            yield uuid.uuid4()
+    assert gen() == gen()
+    assert isinstance(gen(), tuple)
 
     # Property test
     class Test(object):
@@ -456,3 +519,33 @@ if __name__ == '__main__':
 
     t2 = Test()
     assert t2.test != t1.test
+
+    # Lambda test
+    random.seed(0)
+    test = lambda: [random.randint(0, 10000) for i in range(10)]
+    test = Cache()(test)
+    result = test()
+    assert result == test()
+    del test.cache
+    assert result != test()
+
+    # Property + generator test
+    class Test(object):
+        @Cache(optimise=False, ignore=['self'])
+        @property
+        def test(self):
+            for i in range(3):
+                yield i
+                yield uuid.uuid4()
+    assert list(Test().test) == list(Test().test)
+    assert not isinstance(Test().test, tuple)
+
+    class Test(object):
+        @Cache(optimise=True, ignore=['self'])
+        @property
+        def test(self):
+            for i in range(3):
+                yield i
+                yield uuid.uuid4()
+    assert Test().test == Test().test
+    assert isinstance(Test().test, tuple)
