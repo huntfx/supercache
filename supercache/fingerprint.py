@@ -1,5 +1,6 @@
 import inspect
 import sys
+import re
 
 try:
     from .exceptions import UnhashableError
@@ -48,14 +49,28 @@ def parse_input_list(lst, parameters, args, kwargs):
                 else:
                     strs.add(value)
 
+        # Input given as regex
+        elif isinstance(key, re.Pattern):
+            keywords = []
+            for kwarg in kwargs:
+                if key.search(kwarg):
+                    keywords.append(kwarg)
+            for param in parameters:
+                if param not in kwargs:
+                    if key.search(param):
+                        keywords.append(param)
+
         # Input given as keyword
         else:
+            keywords = [key]
+
+        for keyword in keywords:
             try:
-                index = parameters.index(key)
+                index = parameters.index(keyword)
             except ValueError:
-                strs.add(key)
+                strs.add(keyword)
             else:
-                strs.add(index)
+                ints.add(index)
 
         return sorted(ints) + sorted(strs)
 
