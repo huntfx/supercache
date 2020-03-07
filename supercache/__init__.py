@@ -5,10 +5,59 @@ try:
     from .exceptions import UnhashableError
 
 # For local testing
-except ImportError:
+except (ImportError, SystemError):
     import os
     sys.path.append(os.path.normpath(__file__).rsplit(os.path.sep, 2)[0])
     from supercache.exceptions import UnhashableError
+
+
+def generate_request(parameters, args, kwargs):
+    """Generate the default request list."""
+
+    request = list(range(max(len(parameters), len(args))))
+    for key in sorted(kwargs):
+        try:
+            index = parameters.index(key)
+        except ValueError:
+            request.append(key)
+        else:
+            request.append(index)
+    return request
+
+
+def parse_input_list(lst, parameters, args, kwargs):
+    """Parse a list of request/ignore arguments.
+
+    There is a bit of overhead of adding to separate sets, as sorting
+    with both str and int doesn't work.
+    """
+
+    ints = set()
+    strs = set()
+    for key in lst:
+        # Input given as index
+        if isinstance(key, int):
+            ints.add(key)
+
+        # Input given as slice
+        # It's a lot easier here to slice the "default" request
+        elif isinstance(key, slice):
+            for value in generate_request(parameters, args, kwargs)[key]:
+                if isinstance(value, int):
+                    ints.add(value)
+                else:
+                    strs.add(value)
+
+        # Input given as keyword
+        else:
+            try:
+                index = parameters.index(key)
+            except ValueError:
+                strs.add(key)
+            else:
+                strs.add(index)
+
+        return sorted(sorted(ints) + sorted(strs))
 
 
 def fingerprint(fn, args=None, kwargs=None, request=None, ignore=None):
@@ -36,40 +85,13 @@ def fingerprint(fn, args=None, kwargs=None, request=None, ignore=None):
 
     # Use all parameters if none were chosen
     if request is None:
-        request = list(range(max(len(parameters), len(args))))
-        for key in sorted(kwargs):
-            try:
-                index = parameters.index(key)
-            except ValueError:
-                request.append(key)
-            else:
-                request.append(index)
+        request = generate_request(parameters, args, kwargs)
 
-    # Parse the parameter list and try convert to int
     else:
-        backup, request = request, []
-        for key in backup:
-            if isinstance(key, int):
-                request.append(key)
-            else:
-                try:
-                    index = parameters.index(key)
-                except ValueError:
-                    request.append(key)
-                else:
-                    request.append(index)
+        request = parse_input_list(request, parameters, args, kwargs)
 
-    # Parse the ignore list and try convert to int
     if ignore is not None:
-        backup, ignore = ignore, []
-        for key in backup:
-            if isinstance(key, int):
-                ignore.append(key)
-            else:
-                try:
-                    ignore.append(parameters.index(key))
-                except ValueError:
-                    ignore.append(key)
+        ignore = parse_input_list(ignore, parameters, args, kwargs)
         request = [key for key in request if key not in ignore]
 
     # Build a list of the given arguments
