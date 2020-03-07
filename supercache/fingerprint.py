@@ -5,22 +5,6 @@ import re
 from functools import partial
 
 
-class HashOverride(object):
-    """Make an object with a hash that will hopefully never be hit.
-    This is for when **kwargs or kwonlyargs are input as parameters to
-    reduce the chance of collisions.
-    """
-
-    def __init__(self, key):
-        self.key = key
-
-    def __hash__(self):
-        return sys.maxsize - hash(self.key)
-
-    def __eq__(self, item):
-        return False
-
-
 def default_keys(func, parameters, args, kwargs, kwonlyargs):
     """Generate the default request list."""
 
