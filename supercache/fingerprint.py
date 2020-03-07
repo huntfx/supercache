@@ -1,6 +1,7 @@
 import inspect
 import sys
 import re
+from functools import partial
 
 try:
     from .exceptions import UnhashableError
@@ -12,21 +13,23 @@ except (ImportError, SystemError):
     from supercache.exceptions import UnhashableError
 
 
-def generate_request(parameters, args, kwargs):
+def default_keys(parameters, args, kwargs):
     """Generate the default request list."""
 
-    request = list(range(max(len(parameters), len(args))))
+    arg_count = max(len(parameters), len(args))
+    request = list(range(arg_count))
     for key in sorted(kwargs):
         try:
             index = parameters.index(key)
         except ValueError:
             request.append(key)
         else:
-            request.append(index)
+            if index >= arg_count and index not in request[:arg_count]:
+                request.append(index)
     return request
 
 
-def parse_input_list(lst, parameters, args, kwargs):
+def parse_key_list(lst, parameters, args, kwargs):
     """Parse a list of request/ignore arguments.
 
     There is a bit of overhead of adding to separate sets, as sorting
@@ -43,7 +46,7 @@ def parse_input_list(lst, parameters, args, kwargs):
         # Input given as slice
         # It's a lot easier here to slice the "default" request
         elif isinstance(key, slice):
-            for value in generate_request(parameters, args, kwargs)[key]:
+            for value in default_keys(parameters, args, kwargs)[key]:
                 if isinstance(value, int):
                     ints.add(value)
                 else:
@@ -75,56 +78,58 @@ def parse_input_list(lst, parameters, args, kwargs):
         return sorted(ints) + sorted(strs)
 
 
-def fingerprint(fn, args=None, kwargs=None, request=None, ignore=None):
-    """Generate a unique fingerprint for the function."""
+def fingerprint(fn, keys=None, ignore=None):
+    """Generate a unique fingerprint for the function.
+    fn must be a functools.partial instance with the arguments provided.
+    """
 
-    if args is None:
-        args = ()
-    if kwargs is None:
-        kwargs = {}
+    func = fn.func
+    args = fn.args
+    kwargs = fn.keywords
 
     # Get parameters from function
     try:
-        argument_data = inspect.getfullargspec(fn.fget if isinstance(fn, property) else fn)
+        argument_data = inspect.getfullargspec(func.fget if isinstance(func, property) else func)
     except AttributeError:
-        argument_data = inspect.getargspec(fn.fget if isinstance(fn, property) else fn)
+        argument_data = inspect.getargspec(func.fget if isinstance(func, property) else func)
         parameters = argument_data.args
     else:
-        parameters = argument_data.args + argument_data.kwonlyargs
+        parameters = argument_data.args
 
     # Get parameter default values as a dict
     if argument_data.defaults is None:
         default_values = {}
     else:
         default_values = dict(zip(reversed(parameters), reversed(argument_data.defaults)))
+    default_values.update(argument_data.kwonlydefaults)
 
     # Generate a list of parameters to use
-    if request is None:
-        request = generate_request(parameters, args, kwargs)
+    if keys is None:
+        keys = default_keys(parameters, args, kwargs, kwonlyargs=kwonlyargs)
     else:
-        request = parse_input_list(request, parameters, args, kwargs)
+        keys = parse_key_list(keys, parameters, args, kwargs)
 
     if ignore is not None:
-        ignore = parse_input_list(ignore, parameters, args, kwargs)
-        request = [key for key in request if key not in ignore]
+        ignore = parse_key_list(ignore, parameters, args, kwargs)
+        keys = [key for key in keys if key not in ignore]
 
     # Build a list of the given arguments
     hash_list = []
-    for i in request:
-        if isinstance(i, int):
+    for key in keys:
+        if isinstance(key, int):
             # Get the argument at the index
             try:
-                hash_list.append(args[i])
+                hash_list.append(args[key])
 
             # It may exist in *args
             except IndexError:
                 try:
-                    arg = args[i]
+                    arg = args[key]
 
                 # It may exist in **kwargs or have a default value
                 except IndexError:
                     try:
-                        param = parameters[i]
+                        param = parameters[key]
 
                     # It doesn't exist, so default to None
                     except IndexError:
@@ -137,8 +142,9 @@ def fingerprint(fn, args=None, kwargs=None, request=None, ignore=None):
                             hash_list.append(default_values.get(param))
 
         # It may exist in **kwargs
+        # Also hash the key here, otherwise args[0] == kwargs[0]
         else:
-            hash_list.append(kwargs.get(i))
+            hash_list += [key, kwargs.get(key)]
 
     try:
         return tuple(map(hash, hash_list))
