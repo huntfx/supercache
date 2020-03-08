@@ -29,7 +29,17 @@ class cache(object):
     __slots__ = ['keys', 'ignore', 'timeout', 'size', 'precalculate']
 
     def __init__(self, keys=None, ignore=None, timeout=None, size=None, precalculate=False):
-        """Setup the cache options.
+        """Define the caching options.
+
+        The cache key is generated from a function and its arguments,
+        with the option to ignore certain parameters if they don't
+        affect the output.
+
+        Take a function "format_data", that has the parameters
+        "print_messages" and "json_convert". No matter if printing
+        or not, the output won't change, so we can ignore this.
+        However, the value of "json_convert" will change the output,
+        so that needs to be included in the cache.
 
         keys (list):
             Arguments or keywords to include in the cache.
@@ -44,7 +54,7 @@ class cache(object):
             Maximum size of cache in bytes.
             Set to None for infinite.
         precalculate (bool):
-            If a generator should be converted to a tuple when first called.
+            Convert a generator to a tuple.
         """
 
         self.keys = keys
