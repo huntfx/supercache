@@ -54,7 +54,7 @@ class cache(object):
             try:
                 f = partial(fn, *args, **kwargs)
             except TypeError:
-                if isinstance(fn, (classmethod, staticmethod)):
+                if isinstance(fn, (classmethod, staticmethod, property)):
                     raise TypeError("unhashable type '{}'".format(fn.__class__.__name__))
                 raise
 

@@ -106,5 +106,22 @@ class TestClass(unittest.TestCase):
         self.assertNotEqual(result, cls.test1())
         self.assertRaises(TypeError, cls.test2)
 
+    def test_property(self):
+        class cls(object):
+            def __init__(self):
+                self.uid = uuid.uuid4()
+            @property
+            @cache()
+            def test1(self):
+                return (self.uid, uuid.uuid4())
+            @cache()
+            @property
+            def test2(self):
+                return (self.uid, uuid.uuid4())
+        new = cls()
+        self.assertEqual(new.test1, new.test1)
+        self.assertNotEqual(new.test1, cls().test1)
+        self.assertRaises(TypeError, cls.test2)
+
 if __name__ == "__main__":
     unittest.main()
