@@ -82,7 +82,7 @@ def parse_key_list(lst, func, parameters, args, kwargs, kwonlyargs):
     return sorted(ints) + sorted(strs)
 
 
-def fingerprint(fn, keys=None, ignore=None):
+def fingerprint(fn, keys=None, ignore=None, hash_extra=None):
     """Generate a unique fingerprint for the function.
     fn must be a functools.partial instance with the arguments provided.
     """
@@ -120,7 +120,7 @@ def fingerprint(fn, keys=None, ignore=None):
         keys = [key for key in keys if key not in ignore]
 
     # Build a list of the given arguments
-    hash_list = [func, tuple(keys)]
+    hash_list = [func, tuple(keys), hash_extra]
     for key in keys:
         if isinstance(key, int):
             # Get the argument at the index

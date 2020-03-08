@@ -52,7 +52,7 @@ class cache(object):
         @wraps(fn)
         def wrapper(*args, **kwargs):
             f = partial(fn, *args, **kwargs)
-            uid = fingerprint(f, keys=self.keys, ignore=self.ignore)
+            uid = fingerprint(f, keys=self.keys, ignore=self.ignore, hash_extra=(self.timeout, self.size))
 
             # Only read the time if timeouts are set
             # Not a huge cost save, but every little helps
@@ -88,32 +88,49 @@ class cache(object):
                         # Emergency stop if it's the final item
                         if cache_id == uid:
                             self.Order.append(uid)
-                            break
+                            if self.Order[1:]:
+                                continue
+                            else:
+                                break
 
                         del self.Data[cache_id]
-                        del self.Accessed[cache_id]
+                        if self.timeout is not None:
+                            del self.Accessed[cache_id]
                         self.Size[None] -= self.Size.pop(cache_id)
 
             return self.Data[uid]
         return wrapper
 
     @classmethod
-    def delete(cls, fn, *args, **kwargs):
+    def delete(cls, fn=None, *args, **kwargs):
         """Delete cache for a function.
         If no arguments are given, all instances will be cleared.
         Give arguments to only delete a specific cache value.
         """
 
-        f = partial(fn.__wrapped__, *args, **kwargs)
-        uid = fingerprint(f)
-        if args or kwargs:
+        if fn is None:
+            cls.Data = {}
+            cls.Accessed = {}
+            cls.Size = {None: 0}
+            cls.Order = []
+            return
+
+        def delete(uid):
             try:
                 del cls.Data[uid]
             except KeyError:
                 pass
+            else:
+                if uid in cls.Accessed:
+                    del cls.Accessed[uid]
+                if uid in cls.Size:
+                    del cls.Size[uid]
+                    cls.Order.remove(uid)
+
+        f = partial(fn.__wrapped__, *args, **kwargs)
+        uid = fingerprint(f)
+        if args or kwargs:
+            delete(uid)
         else:
             for key in {k for k in cls.Data.keys() if k[0] == uid[0]}:
-                try:
-                    del cls.Data[key]
-                except KeyError:
-                    pass
+                delete(key)
