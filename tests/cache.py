@@ -1,3 +1,4 @@
+import inspect
 import os
 import sys
 import unittest
@@ -168,6 +169,14 @@ class TestGenerator(unittest.TestCase):
         @cache()
         def test(x=0):
             yield uuid.uuid4()
+        self.assertEqual(test(), test(0))
+        self.assertNotEqual(test(), test(1))
+
+    def test_precalculate(self):
+        @cache(precalculate=True)
+        def test(x=0):
+            yield uuid.uuid4()
+        self.assertIsInstance(test(), tuple)
         self.assertEqual(test(), test(0))
         self.assertNotEqual(test(), test(1))
 

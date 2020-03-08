@@ -26,9 +26,9 @@ class cache(object):
     Hits = defaultdict(int)
     Misses = defaultdict(int)
 
-    __slots__ = ['keys', 'ignore', 'timeout', 'size']
+    __slots__ = ['keys', 'ignore', 'timeout', 'size', 'precalculate']
 
-    def __init__(self, keys=None, ignore=None, timeout=None, size=None):
+    def __init__(self, keys=None, ignore=None, timeout=None, size=None, precalculate=False):
         """Setup the cache options.
 
         keys (list):
@@ -43,12 +43,15 @@ class cache(object):
         size (int):
             Maximum size of cache in bytes.
             Set to None for infinite.
+        precalculate (bool):
+            If a generator should be converted to a tuple when first called.
         """
 
         self.keys = keys
         self.ignore = ignore
         self.timeout = timeout
         self.size = size
+        self.precalculate = precalculate
 
     def __call__(self, fn):
         """Setup function cache."""
@@ -79,7 +82,10 @@ class cache(object):
                 # Execute the actual function
                 self.Misses[uid] += 1
                 if inspect.isgeneratorfunction(fn):
-                    self.Data[uid] = GeneratorCache(f)
+                    if self.precalculate:
+                        self.Data[uid] = tuple(f())
+                    else:
+                        self.Data[uid] = GeneratorCache(f)
                 else:
                     self.Data[uid] = f()
 
