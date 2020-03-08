@@ -1,8 +1,6 @@
 # supercache
 Cache the result of a function so subsequent calls are faster. For finer control, certain arguments can be included or excluded.
 
-Currently timeouts are supported, with a future update bringing size limits.
-
 ### Supported Types
 - functions
 - generators/iterators
@@ -10,4 +8,6 @@ Currently timeouts are supported, with a future update bringing size limits.
 - properties
 
 ### Limitations
-- Unable to cache anything using unhashable arguments
+- Cache will fail if using unhashable arguments
+- If two classes have the same inheritance, trying to create and hash them on the same line will result in both having the same hash
+- Only able to cache classmethods and staticmethods if the cache wrapper is added first

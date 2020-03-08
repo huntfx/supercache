@@ -170,9 +170,8 @@ def fingerprint(fn, keys=None, ignore=None, hash_extra=None):
 
     # Raise custom exception message
     except TypeError:
-        raise
         for item in hash_list:
             try:
                 hash(item)
             except TypeError:
-                raise TypeError("unhashable function input type: '{}'".format(item.__class__.__name__))
+                raise TypeError("unhashable function input type '{}'".format(item.__class__.__name__))

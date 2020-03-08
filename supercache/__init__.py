@@ -51,7 +51,13 @@ class cache(object):
 
         @wraps(fn)
         def wrapper(*args, **kwargs):
-            f = partial(fn, *args, **kwargs)
+            try:
+                f = partial(fn, *args, **kwargs)
+            except TypeError:
+                if isinstance(fn, (classmethod, staticmethod)):
+                    raise TypeError("unhashable type '{}'".format(fn.__class__.__name__))
+                raise
+
             uid = fingerprint(f, keys=self.keys, ignore=self.ignore, hash_extra=(self.timeout, self.size))
 
             # Only read the time if timeouts are set

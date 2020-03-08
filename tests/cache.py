@@ -63,5 +63,48 @@ class TestFunction(unittest.TestCase):
         self.assertNotEqual(result, result2)
 
 
+class TestClass(unittest.TestCase):
+    def test_method(self):
+        class cls(object):
+            @cache()
+            def test(self):
+                return uuid.uuid4()
+        new = cls()
+        self.assertEqual(new.test(), new.test())
+        self.assertNotEqual(new.test(), cls().test())
+        self.assertEqual(cls().test(), cls().test())  # Python limitation
+
+    def test_classmethod(self):
+        class cls(object):
+            @classmethod
+            @cache()
+            def test1(cls):
+                return uuid.uuid4()
+            @cache()
+            @classmethod
+            def test2(cls):
+                return uuid.uuid4()
+        result = cls.test1()
+        self.assertEqual(result, cls.test1())
+        cache.delete(cls.test1)
+        self.assertNotEqual(result, cls.test1())
+        self.assertRaises(TypeError, cls.test2)
+
+    def test_staticmethod(self):
+        class cls(object):
+            @staticmethod
+            @cache()
+            def test1():
+                return uuid.uuid4()
+            @cache()
+            @staticmethod
+            def test2():
+                return uuid.uuid4()
+        result = cls.test1()
+        self.assertEqual(result, cls.test1())
+        cache.delete(cls.test1)
+        self.assertNotEqual(result, cls.test1())
+        self.assertRaises(TypeError, cls.test2)
+
 if __name__ == "__main__":
     unittest.main()
