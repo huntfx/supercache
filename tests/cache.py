@@ -12,7 +12,7 @@ class TestFunction(unittest.TestCase):
     def setUp(self):
         cache.delete()
 
-    def test_simple_func(self):
+    def test_simple(self):
         @cache()
         def func(a=None):
             return uuid.uuid4()
@@ -154,6 +154,22 @@ class TestStats(unittest.TestCase):
         self.assertEqual(cache.misses(f1, None), 1)
         self.assertEqual(cache.hits(f1, 2), 2)
         self.assertEqual(cache.misses(f1, 2), 1)
+
+
+class TestLambda(unittest.TestCase):
+    def test_simple(self):
+        func = cache()(lambda a=1: uuid.uuid4())
+        self.assertEqual(func(), func(1))
+        self.assertNotEqual(func(), func(2))
+
+
+class TestGenerator(unittest.TestCase):
+    def test_simple(self):
+        @cache()
+        def test(x=0):
+            yield uuid.uuid4()
+        self.assertEqual(test(), test(0))
+        self.assertNotEqual(test(), test(1))
 
 
 if __name__ == "__main__":

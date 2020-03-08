@@ -1,3 +1,4 @@
+import inspect
 import os
 import sys
 import time
@@ -6,7 +7,7 @@ from functools import partial, wraps
 
 sys.path.append(os.path.normpath(__file__).rsplit(os.path.sep, 2)[0])
 from supercache.fingerprint import fingerprint
-from supercache.utils import getsize
+from supercache.utils import GeneratorCache, getsize
 
 
 class cache(object):
@@ -54,6 +55,7 @@ class cache(object):
 
         @wraps(fn)
         def wrapper(*args, **kwargs):
+
             try:
                 f = partial(fn, *args, **kwargs)
             except TypeError:
@@ -73,8 +75,13 @@ class cache(object):
             if (not cache_exists
                 or (self.timeout is not None
                     and current_time - self.timeout > self.Accessed.get(uid, current_time))):
-                self.Data[uid] = f()
+
+                # Execute the actual function
                 self.Misses[uid] += 1
+                if inspect.isgeneratorfunction(fn):
+                    self.Data[uid] = GeneratorCache(f)
+                else:
+                    self.Data[uid] = f()
 
                 if self.timeout is not None:
                     self.Accessed[uid] = current_time
