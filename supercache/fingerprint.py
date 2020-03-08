@@ -5,6 +5,13 @@ import re
 from functools import partial
 
 
+try:
+    Pattern = re.Pattern
+except AttributeError:
+    # < Python 3.7
+    Pattern = re._pattern_type
+
+
 def default_keys(func, parameters, args, kwargs, kwonlyargs):
     """Generate the default request list."""
 
@@ -25,7 +32,7 @@ def default_keys(func, parameters, args, kwargs, kwonlyargs):
     return keys
 
 
-def parse_key_list(lst, parameters, args, kwargs):
+def parse_key_list(lst, func, parameters, args, kwargs, kwonlyargs):
     """Parse a list of request/ignore arguments.
 
     There is a bit of overhead of adding to separate sets, as sorting
@@ -42,34 +49,35 @@ def parse_key_list(lst, parameters, args, kwargs):
         # Input given as slice
         # It's a lot easier here to slice the "default" request
         elif isinstance(key, slice):
-            for value in default_keys(parameters, args, kwargs)[key]:
+            for value in default_keys(func, parameters, args, kwargs, kwonlyargs)[key]:
                 if isinstance(value, int):
                     ints.add(value)
                 else:
                     strs.add(value)
 
-        # Input given as regex
-        elif isinstance(key, re._pattern_type):
-            keywords = []
-            for kwarg in kwargs:
-                if key.search(kwarg):
-                    keywords.append(kwarg)
-            for param in parameters:
-                if param not in kwargs:
-                    if key.search(param):
-                        keywords.append(param)
-
-        # Input given as keyword
         else:
-            keywords = [key]
+            # Input given as regex
+            if isinstance(key, Pattern):
+                keywords = []
+                for kwarg in kwargs:
+                    if key.search(kwarg):
+                        keywords.append(kwarg)
+                for param in parameters:
+                    if param not in kwargs:
+                        if key.search(param):
+                            keywords.append(param)
 
-        for keyword in keywords:
-            try:
-                index = parameters.index(keyword)
-            except ValueError:
-                strs.add(keyword)
+            # Input given as keyword
             else:
-                ints.add(index)
+                keywords = [key]
+
+            for keyword in keywords:
+                try:
+                    index = parameters.index(keyword)
+                except ValueError:
+                    strs.add(keyword)
+                else:
+                    ints.add(index)
 
     return sorted(ints) + sorted(strs)
 
@@ -105,14 +113,14 @@ def fingerprint(fn, keys=None, ignore=None):
     if keys is None:
         keys = default_keys(func, parameters, args, kwargs, kwonlydefaults)
     else:
-        keys = parse_key_list(keys, parameters, args, kwargs)
+        keys = parse_key_list(keys, func, parameters, args, kwargs, kwonlydefaults)
 
     if ignore is not None:
-        ignore = parse_key_list(ignore, parameters, args, kwargs)
+        ignore = parse_key_list(ignore, func, parameters, args, kwargs, kwonlydefaults)
         keys = [key for key in keys if key not in ignore]
 
     # Build a list of the given arguments
-    hash_list = [func]
+    hash_list = [func, tuple(keys)]
     for key in keys:
         if isinstance(key, int):
             # Get the argument at the index
