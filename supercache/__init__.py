@@ -22,6 +22,8 @@ class cache(object):
     Accessed = {}
     Size = {None: 0}
     Order = []
+    Hits = defaultdict(int)
+    Misses = defaultdict(int)
 
     __slots__ = ['keys', 'ignore', 'timeout', 'size']
 
@@ -41,6 +43,7 @@ class cache(object):
             Maximum size of cache in bytes.
             Set to None for infinite.
         """
+
         self.keys = keys
         self.ignore = ignore
         self.timeout = timeout
@@ -58,7 +61,7 @@ class cache(object):
                     raise TypeError("unhashable type '{}'".format(fn.__class__.__name__))
                 raise
 
-            uid = fingerprint(f, keys=self.keys, ignore=self.ignore, hash_extra=(self.timeout, self.size))
+            uid = fingerprint(f, keys=self.keys, ignore=self.ignore)
 
             # Only read the time if timeouts are set
             # Not a huge cost save, but every little helps
@@ -71,6 +74,7 @@ class cache(object):
                 or (self.timeout is not None
                     and current_time - self.timeout > self.Accessed.get(uid, current_time))):
                 self.Data[uid] = f()
+                self.Misses[uid] += 1
 
                 if self.timeout is not None:
                     self.Accessed[uid] = current_time
@@ -103,9 +107,26 @@ class cache(object):
                         if self.timeout is not None:
                             del self.Accessed[cache_id]
                         self.Size[None] -= self.Size.pop(cache_id)
+            else:
+                self.Hits[uid] += 1
 
             return self.Data[uid]
         return wrapper
+
+    @classmethod
+    def _delete_uid(cls, uid):
+        """Remove a single cache record."""
+
+        try:
+            del cls.Data[uid]
+        except KeyError:
+            pass
+        else:
+            if uid in cls.Accessed:
+                del cls.Accessed[uid]
+            if uid in cls.Size:
+                del cls.Size[uid]
+                cls.Order.remove(uid)
 
     @classmethod
     def delete(cls, fn=None, *args, **kwargs):
@@ -119,24 +140,39 @@ class cache(object):
             cls.Accessed = {}
             cls.Size = {None: 0}
             cls.Order = []
-            return
 
-        def delete(uid):
-            try:
-                del cls.Data[uid]
-            except KeyError:
-                pass
-            else:
-                if uid in cls.Accessed:
-                    del cls.Accessed[uid]
-                if uid in cls.Size:
-                    del cls.Size[uid]
-                    cls.Order.remove(uid)
+        elif args or kwargs:
+            cls._delete_uid(fingerprint(partial(fn.__wrapped__, *args, **kwargs)))
 
-        f = partial(fn.__wrapped__, *args, **kwargs)
-        uid = fingerprint(f)
-        if args or kwargs:
-            delete(uid)
         else:
-            for key in {k for k in cls.Data.keys() if k[0] == uid[0]}:
-                delete(key)
+            func_hash = hash(fn.__wrapped__)
+            for key in {k for k in cls.Data.keys() if k[0] == func_hash}:
+                cls._delete_uid(key)
+
+    @classmethod
+    def _count(cls, dct, fn=None, *args, **kwargs):
+        """Count a number of occurances."""
+
+        # Count all records
+        if fn is None:
+            return sum(dct.values())
+
+        # Count records for a particular function with arguments
+        if args or kwargs:
+            return dct.get(fingerprint(partial(fn.__wrapped__, *args, **kwargs)), 0)
+
+        # Count records for a particular function
+        func_hash = hash(fn.__wrapped__)
+        return sum(v for k, v in dct.items() if k[0] == func_hash)
+
+    @classmethod
+    def hits(cls, fn=None, *args, **kwargs):
+        """Count the number of times the cache has been used."""
+
+        return cls._count(cls.Hits, fn, *args, **kwargs)
+
+    @classmethod
+    def misses(cls, fn=None, *args, **kwargs):
+        """Count the number of times the cache has been regenerated."""
+
+        return cls._count(cls.Misses, fn, *args, **kwargs)

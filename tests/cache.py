@@ -9,6 +9,9 @@ from supercache import cache
 
 
 class TestFunction(unittest.TestCase):
+    def setUp(self):
+        cache.delete()
+
     def test_simple_func(self):
         @cache()
         def func(a=None):
@@ -122,6 +125,36 @@ class TestClass(unittest.TestCase):
         self.assertEqual(new.test1, new.test1)
         self.assertNotEqual(new.test1, cls().test1)
         self.assertRaises(TypeError, cls.test2)
+
+
+class TestStats(unittest.TestCase):
+    def setUp(self):
+        cache.delete()
+        cache.Hits.clear()
+        cache.Misses.clear()
+
+    def test_counts(self):
+        @cache()
+        def f1(x=None): pass
+        @cache()
+        def f2(x=None): pass
+        for f in (f1, f2):
+            f()
+            f()
+            f(1)
+            f(2)
+            f(2)
+            f(2)
+            f(3)
+        self.assertEqual(cache.hits(), 6)
+        self.assertEqual(cache.misses(), 8)
+        self.assertEqual(cache.hits(f1), 3)
+        self.assertEqual(cache.misses(f1), 4)
+        self.assertEqual(cache.hits(f1, None), 1)
+        self.assertEqual(cache.misses(f1, None), 1)
+        self.assertEqual(cache.hits(f1, 2), 2)
+        self.assertEqual(cache.misses(f1, 2), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
