@@ -84,6 +84,12 @@ class TestFingerprint(unittest.TestCase):
         self.assertNotEqual(fingerprint(partial(f, 1, 0, 2)), fingerprint(partial(f, 1, 0)))
         self.assertNotEqual(fingerprint(partial(f, 1, 2)), fingerprint(partial(f, 1, b=2)))
 
+    def test_different_functions(self):
+        def f1(a=1, b=2): pass
+        def f2(a, b): pass
+        self.assertNotEqual(fingerprint(partial(f1, 1, 2)), fingerprint(partial(f2, 1, 2)))
+        self.assertNotEqual(fingerprint(partial(f1)), fingerprint(partial(f2, 1, 2)))
+
 
 if __name__ == "__main__":
     unittest.main()

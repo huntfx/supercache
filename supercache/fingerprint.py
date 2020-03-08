@@ -112,7 +112,7 @@ def fingerprint(fn, keys=None, ignore=None):
         keys = [key for key in keys if key not in ignore]
 
     # Build a list of the given arguments
-    hash_list = []
+    hash_list = [func]
     for key in keys:
         if isinstance(key, int):
             # Get the argument at the index
