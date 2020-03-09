@@ -1,22 +1,39 @@
 # supercache
-Cache the result of a function so subsequent calls are faster. This has been designed to be as easy and intuitive to use as possible.
+Easy to use and intuitive caching for functions.
 
 ## Usage
 ```python
-# Standard caching, uses all parameters and keeps the result for 60 seconds
-@cache(timeout=60)
-def func(a, b=None):
-    pass
+from supercache import cache
 
-# Ignore the print_output parameter as it doesn't affect the function
-@cache(ignore=['print_output'])
+# Cache all parametes other than print_output, and keep the result for 60 seconds
+@cache(timeout=60, ignore=['print_output'])
 def func(a, b=None, print_output=True):
-    pass
+    sleep(10)
+    if print_output:
+        print(a)
+    return a
 
-# Only cache the first 2 arguments and ignore any extra arguments
-@cache(keys=[0, 1])
+# Writes value to cache
+func(1, 2, False)
+
+# Reads value from cache
+func(1, 2)
+
+# Removes value from cache
+cache.delete(func, 1, 2)
+
+
+# Only cache the first argument, and ignore anything extra
+@cache(keys=[0])
 def func(a, b=None, *args):
-    pass
+    sleep(10)
+    return a
+
+# Writes value to cache
+func(1)
+
+# Reads value from cache
+func(1, 2, 3, 4, 5, 6, 7)
 ```
 
 ### Supported Types
@@ -88,7 +105,7 @@ Return a count of how many times the cache was generated for the given parameter
 - `cache.misses(func, 1, b=2)`: Number of cache misses specifically for `func(1, b=2)`.
 
 ## Limitations
-- Probably not very threadsafe
 - Unable to cache if unhashable arguments are used
 - Python will assign the same hash to two classes with the same inheritance if they are both initialised on the same line (fortunately this shouldn't ever happen outside of testing)
-- `classmethods`, `staticmethods` and `properties` can only be cached if the cache decorator goes first
+- `classmethods`, `staticmethods` and `properties` can only be cached if the cache decorator is executed first
+- Probably not very threadsafe

@@ -5,9 +5,8 @@ import time
 from collections import defaultdict
 from functools import partial, wraps
 
-sys.path.append(os.path.normpath(__file__).rsplit(os.path.sep, 2)[0])
-from supercache.fingerprint import fingerprint
-from supercache.utils import *
+from .fingerprint import fingerprint
+from .utils import *
 
 
 class cache(object):

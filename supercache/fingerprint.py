@@ -90,6 +90,8 @@ def fingerprint(fn, keys=None, ignore=None):
     func = fn.func
     args = fn.args
     kwargs = fn.keywords
+    if kwargs is None:  # Python 3.4 fix
+        kwargs = {}
 
     # Get parameters from function
     try:
@@ -100,7 +102,9 @@ def fingerprint(fn, keys=None, ignore=None):
         kwonlydefaults = {}
     else:
         parameters = argument_data.args
-        kwonlydefaults = argument_data.kwonlydefaults or {}
+        kwonlydefaults = argument_data.kwonlydefaults
+        if kwonlydefaults is None:
+            kwonlydefaults = {}
 
     # Get parameter default values as a dict
     if argument_data.defaults is None:
