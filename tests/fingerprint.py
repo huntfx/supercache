@@ -151,5 +151,5 @@ class TestCacheInputs(unittest.TestCase):
         self.assertEqual(fingerprint(fn, keys=['arg_c'], ignore=[regex]), fingerprint(fn, keys=[]))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     unittest.main()

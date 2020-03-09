@@ -7,7 +7,7 @@ from functools import partial, wraps
 
 sys.path.append(os.path.normpath(__file__).rsplit(os.path.sep, 2)[0])
 from supercache.fingerprint import fingerprint
-from supercache.utils import GeneratorCache, getsize
+from supercache.utils import *
 
 
 class cache(object):
@@ -165,10 +165,10 @@ class cache(object):
             cls.Order = []
 
         elif args or kwargs:
-            cls._delete_uid(fingerprint(partial(fn.__wrapped__, *args, **kwargs)))
+            cls._delete_uid(fingerprint(partial(extract_decorated_func(fn), *args, **kwargs)))
 
         else:
-            func_hash = hash(fn.__wrapped__)
+            func_hash = hash(extract_decorated_func(fn))
             for key in {k for k in cls.Data.keys() if k[0] == func_hash}:
                 cls._delete_uid(key)
 
@@ -182,10 +182,10 @@ class cache(object):
 
         # Count records for a particular function with arguments
         if args or kwargs:
-            return dct.get(fingerprint(partial(fn.__wrapped__, *args, **kwargs)), 0)
+            return dct.get(fingerprint(partial(extract_decorated_func(fn), *args, **kwargs)), 0)
 
         # Count records for a particular function
-        func_hash = hash(fn.__wrapped__)
+        func_hash = hash(extract_decorated_func(fn))
         return sum(v for k, v in dct.items() if k[0] == func_hash)
 
     @classmethod

@@ -42,6 +42,7 @@ class GeneratorCache(object):
 
 def getsize(obj, ignore_types=(type, ModuleType, FunctionType)):
     """Summed size of object and members.
+
     Source: https://stackoverflow.com/a/30316760/2403000
     """
 
@@ -59,3 +60,18 @@ def getsize(obj, ignore_types=(type, ModuleType, FunctionType)):
                 need_referents.append(obj)
         objects = get_referents(*need_referents)
     return size
+
+
+def extract_decorated_func(wrap):
+    """Get the function from inside a decorator.
+    This will first attempt the Python 3 method, then fallback to
+    something that will work with Python 2.
+
+    Source: https://stackoverflow.com/a/43506509/2403000
+    """
+
+    try:
+        return wrap.__wrapped__
+    except AttributeError:
+        closure = (c.cell_contents for c in wrap.__closure__)
+        return next((c for c in closure if isinstance(c, FunctionType)), None)
