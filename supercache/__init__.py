@@ -9,6 +9,9 @@ from .fingerprint import fingerprint
 from .utils import *
 
 
+__version__ = '1.0.0'
+
+
 class cache(object):
     """Base cache wrapper.
     This is designed to be added to a function as a decorator.

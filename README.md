@@ -58,7 +58,7 @@ def generator():
 func = cache()(lambda: None)
 ```
 
-## Reference
+## API Reference
 
 ### cache(_keys=None, ignore=None, timeout=None, size=None, precalculate=False_)
 
