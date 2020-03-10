@@ -2,17 +2,19 @@ import inspect
 import os
 import sys
 import time
-from collections import defaultdict
 from functools import partial, wraps
 
 from .fingerprint import fingerprint
 from .utils import *
+from .backend import MemoryCache
 
 
-__version__ = '1.1.0'
+__version__ = '1.2.0'
+
+_slots = []
 
 
-class cache(object):
+class Memoize(object):
     """Base cache wrapper.
     This is designed to be added to a function as a decorator.
 
@@ -21,14 +23,10 @@ class cache(object):
         def func(): pass
     """
 
-    Data = {}
-    Accessed = {}
-    Size = {None: 0}
-    Order = []
-    Hits = defaultdict(int)
-    Misses = defaultdict(int)
-
-    __slots__ = ['keys', 'ignore', 'timeout', 'size', 'precalculate']
+    __slots__ = [
+        'cache_data', 'cache_accessed', 'cache_size', 'cache_order', 'cache_hits', 'cache_misses',
+        'keys', 'ignore', 'timeout', 'size', 'precalculate',
+    ]
 
     def __init__(self, keys=None, ignore=None, timeout=None, size=None, precalculate=False):
         """Define the caching options.
@@ -86,96 +84,127 @@ class cache(object):
                 current_time = time.time()
 
             # Determine if the function needs to be run (again)
-            cache_exists = uid in self.Data
+            cache_exists = uid in self.cache_data
             if (not cache_exists
                 or (self.timeout is not None
-                    and current_time - self.timeout > self.Accessed.get(uid, current_time))):
+                    and current_time - self.timeout > self.cache_accessed.get(uid, current_time))):
 
                 # Execute the actual function
-                self.Misses[uid] += 1
+                self.cache_misses[uid] += 1
                 if inspect.isgeneratorfunction(fn):
                     if self.precalculate:
-                        self.Data[uid] = tuple(f())
+                        self.cache_data[uid] = tuple(f())
                     else:
-                        self.Data[uid] = GeneratorCache(f)
+                        self.cache_data[uid] = GeneratorCache(f)
                 else:
-                    self.Data[uid] = f()
+                    self.cache_data[uid] = f()
 
                 if self.timeout is not None:
-                    self.Accessed[uid] = current_time
+                    self.cache_accessed[uid] = current_time
 
                 # Deal with the cache size limit
                 if self.size is not None:
 
                     # Mark down the order at which cache was added
                     if cache_exists:
-                        self.Order.remove(uid)
-                    self.Order.append(uid)
+                        self.cache_order.remove(uid)
+                    self.cache_order.append(uid)
 
                     # Calculate the size of the object
-                    self.Size[uid] = getsize(self.Data[uid])
-                    self.Size[None] += self.Size[uid]
+                    self.cache_size[uid] = getsize(self.cache_data[uid])
+                    self.cache_size[None] += self.cache_size[uid]
 
                     # Remove old cache until under the size limit
-                    while self.Size[None] > self.size:
-                        cache_id = self.Order.pop(0)
+                    while self.cache_size[None] > self.size:
+                        cache_id = self.cache_order.pop(0)
 
                         # Emergency stop if it's the final item
                         if cache_id == uid:
-                            self.Order.append(uid)
-                            if self.Order[1:]:
+                            self.cache_order.append(uid)
+                            if self.cache_order[1:]:
                                 continue
                             else:
                                 break
 
-                        del self.Data[cache_id]
+                        del self.cache_data[cache_id]
                         if self.timeout is not None:
-                            del self.Accessed[cache_id]
-                        self.Size[None] -= self.Size.pop(cache_id)
+                            del self.cache_accessed[cache_id]
+                        self.cache_size[None] -= self.cache_size.pop(cache_id)
             else:
-                self.Hits[uid] += 1
+                self.cache_hits[uid] += 1
 
-            return self.Data[uid]
+            return self.cache_data[uid]
         return wrapper
 
-    @classmethod
-    def _delete_uid(cls, uid):
+
+class Cache(object):
+    def __init__(self, group=None, type=MemoryCache):
+        self.group = group
+        self.type = type
+        self.data = self.type.data[self.group]
+
+    def __call__(self, *args, **kwargs):
+        """Create a new memoize instance."""
+
+        new = Memoize(*args, **kwargs)
+        new.cache_data = self.data[self.type.Result]
+        new.cache_accessed = self.data[self.type.Accessed]
+        new.cache_size = self.data[self.type.Size]
+        new.cache_order = self.data[self.type.Order]
+        new.cache_hits = self.data[self.type.Hits]
+        new.cache_misses = self.data[self.type.Misses]
+        return new
+
+    def _delete_uid(self, uid):
         """Remove a single cache record."""
 
         try:
-            del cls.Data[uid]
+            del self.data[self.type.Result][uid]
         except KeyError:
             pass
         else:
-            if uid in cls.Accessed:
-                del cls.Accessed[uid]
-            if uid in cls.Size:
-                del cls.Size[uid]
-                cls.Order.remove(uid)
+            if uid in self.data[self.type.Accessed]:
+                del self.data[self.type.Accessed][uid]
+            if uid in self.data[self.type.Size]:
+                del self.data[self.type.Size][uid]
+                self.data[self.type.Order].remove(uid)
+            if uid in self.data[self.type.Hits]:
+                del self.data[self.type.Hits][uid]
+            if uid in self.data[self.type.Misses]:
+                del self.data[self.type.Misses][uid]
 
-    @classmethod
-    def delete(cls, fn=None, *args, **kwargs):
+    def delete(self, fn=None, *args, **kwargs):
         """Delete cache for a function.
         If no arguments are given, all instances will be cleared.
         Give arguments to only delete a specific cache value.
         """
 
+        # Reset all the cache in place
         if fn is None:
-            cls.Data = {}
-            cls.Accessed = {}
-            cls.Size = {None: 0}
-            cls.Order = []
+            defaults = self.type.defaults()
+            self.data[self.type.Result].clear()
+            self.data[self.type.Result].update(defaults[self.type.Result])
+            self.data[self.type.Accessed].clear()
+            self.data[self.type.Accessed].update(defaults[MemoryCache.Accessed])
+            self.data[self.type.Size].clear()
+            self.data[self.type.Size].update(defaults[MemoryCache.Size])
+            self.data[self.type.Order][:] = defaults[MemoryCache.Order]
+            self.data[self.type.Hits].clear()
+            self.data[self.type.Hits].update(defaults[MemoryCache.Hits])
+            self.data[self.type.Misses].clear()
+            self.data[self.type.Misses].update(defaults[MemoryCache.Misses])
 
+        # Remove cache for specific execution
         elif args or kwargs:
-            cls._delete_uid(fingerprint(partial(extract_decorated_func(fn), *args, **kwargs)))
+            self._delete_uid(fingerprint(partial(extract_decorated_func(fn), *args, **kwargs)))
 
+        # Remove all cache under a function
         else:
             func_hash = hash(extract_decorated_func(fn))
-            for key in {k for k in cls.Data.keys() if k[0] == func_hash}:
-                cls._delete_uid(key)
+            for key in {k for k in self.data[self.type.Result].keys() if k[0] == func_hash}:
+                self._delete_uid(key)
 
-    @classmethod
-    def _count(cls, dct, fn=None, *args, **kwargs):
+    def _count(self, dct, fn=None, *args, **kwargs):
         """Count a number of occurances."""
 
         # Count all records
@@ -192,35 +221,36 @@ class cache(object):
         func_hash = hash(func)
         return sum(v for k, v in dct.items() if k[0] == func_hash)
 
-    @classmethod
-    def hits(cls, fn=None, *args, **kwargs):
+    def hits(self, fn=None, *args, **kwargs):
         """Count the number of times the cache has been used."""
 
-        return cls._count(cls.Hits, fn, *args, **kwargs)
+        return self._count(self.data[self.type.Hits], fn, *args, **kwargs)
 
-    @classmethod
-    def misses(cls, fn=None, *args, **kwargs):
+    def misses(self, fn=None, *args, **kwargs):
         """Count the number of times the cache has been regenerated."""
 
-        return cls._count(cls.Misses, fn, *args, **kwargs)
+        return self._count(self.data[self.type.Misses], fn, *args, **kwargs)
 
-    @classmethod
-    def exists(cls, fn=None, *args, **kwargs):
+    def exists(self, fn=None, *args, **kwargs):
         """Find if cache exists for a certain input."""
 
         # If any cache exists
         if fn is None:
-            return bool(cls.Data)
+            return bool(self.data[self.type.Result])
 
         func = extract_decorated_func(fn)
 
         # Cache exists for a particular function with arguments
         if args or kwargs:
-            return fingerprint(partial(func, *args, **kwargs)) in cls.Data
+            return fingerprint(partial(func, *args, **kwargs)) in self.data[self.type.Result]
 
         # Cache exists for a particular function
         func_hash = hash(func)
-        for key in cls.Data:
+        for key in self.data[self.type.Result]:
             if key[0] == func_hash:
                 return True
         return False
+
+
+# Setup default cache group
+cache = Cache(None)

@@ -6,7 +6,7 @@ import uuid
 from functools import partial
 
 sys.path.append(os.path.normpath(__file__).rsplit(os.path.sep, 2)[0])
-from supercache import cache
+from supercache import Cache, cache
 
 
 class TestFunction(unittest.TestCase):
@@ -149,8 +149,6 @@ class TestClass(unittest.TestCase):
 class TestStats(unittest.TestCase):
     def setUp(self):
         cache.delete()
-        cache.Hits.clear()
-        cache.Misses.clear()
 
     def test_counts(self):
         @cache()
@@ -222,6 +220,34 @@ class TestGenerator(unittest.TestCase):
         self.assertEqual(test(), test(0))
         self.assertNotEqual(test(), test(1))
 
+
+class TestGroup(unittest.TestCase):
+    def setUp(self):
+        self.c1 = Cache(group='1')
+        self.c2 = Cache(group='2')
+        self.f1 = self.c1()(lambda: uuid.uuid4())
+        self.f2 = self.c2()(lambda: uuid.uuid4())
+
+    def test_simple(self):
+        self.assertEqual(self.f1(), self.f1())
+        self.assertEqual(self.f2(), self.f2())
+        self.assertNotEqual(self.f1(), self.f2())
+
+    def test_delete(self):
+        result1 = self.f1()
+        result2 = self.f2()
+        self.c1.delete()
+        self.assertNotEqual(result1, self.f1())
+        self.assertEqual(result2, self.f2())
+        self.c2.delete(self.f2, 1)
+        self.assertEqual(result2, self.f2())
+        self.c2.delete(self.f2)
+        self.assertNotEqual(result2, self.f2())
+
+    def test_delete_default(self):
+        self.f1()
+        cache.delete()
+        self.assertTrue(self.c1.exists(self.f1))
 
 if __name__ == '__main__':
     unittest.main()
