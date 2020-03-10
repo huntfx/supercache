@@ -9,7 +9,7 @@ from .fingerprint import fingerprint
 from .utils import *
 
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 
 
 class cache(object):
@@ -182,12 +182,14 @@ class cache(object):
         if fn is None:
             return sum(dct.values())
 
+        func = extract_decorated_func(fn)
+
         # Count records for a particular function with arguments
         if args or kwargs:
-            return dct.get(fingerprint(partial(extract_decorated_func(fn), *args, **kwargs)), 0)
+            return dct.get(fingerprint(partial(func, *args, **kwargs)), 0)
 
         # Count records for a particular function
-        func_hash = hash(extract_decorated_func(fn))
+        func_hash = hash(func)
         return sum(v for k, v in dct.items() if k[0] == func_hash)
 
     @classmethod
@@ -201,3 +203,24 @@ class cache(object):
         """Count the number of times the cache has been regenerated."""
 
         return cls._count(cls.Misses, fn, *args, **kwargs)
+
+    @classmethod
+    def exists(cls, fn=None, *args, **kwargs):
+        """Find if cache exists for a certain input."""
+
+        # If any cache exists
+        if fn is None:
+            return bool(cls.Data)
+
+        func = extract_decorated_func(fn)
+
+        # Cache exists for a particular function with arguments
+        if args or kwargs:
+            return fingerprint(partial(func, *args, **kwargs)) in cls.Data
+
+        # Cache exists for a particular function
+        func_hash = hash(func)
+        for key in cls.Data:
+            if key[0] == func_hash:
+                return True
+        return False
