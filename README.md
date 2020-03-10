@@ -104,6 +104,13 @@ Return a count of how many times the cache was generated for the given parameter
 - `cache.misses(func)`: Number of cache misses for `func`.
 - `cache.misses(func, 1, b=2)`: Number of cache misses specifically for `func(1, b=2)`.
 
+### cache.exists(_func=None, *args, **kwargs_)
+Get if the cache exists for a particular input.
+
+- `cache.exists()`: If any cache exists.
+- `cache.exists(func)`: If any cache exists for `func`.
+- `cache.exists(func, 1, b=2)`: If any cache exists specifically for `func(1, b=2)`.
+
 ## Limitations
 - Unable to cache if unhashable arguments are used
 - Python will assign the same hash to two classes with the same inheritance if they are both initialised on the same line (fortunately this shouldn't ever happen outside of testing)
