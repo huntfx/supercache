@@ -3,7 +3,7 @@ import sys
 import random
 import re
 from functools import partial
-
+from types import GeneratorType
 
 try:
     Pattern = re.Pattern
@@ -129,7 +129,7 @@ def fingerprint(fn, keys=None, ignore=None):
         if isinstance(key, int):
             # Get the argument at the index
             try:
-                hash_list.append(args[key])
+                value = args[key]
 
                 # Raise error if key also exists in kwargs
                 try:
@@ -143,7 +143,7 @@ def fingerprint(fn, keys=None, ignore=None):
             # It may exist in *args
             except IndexError:
                 try:
-                    arg = args[key]
+                    value = args[key]
 
                 # It may exist in **kwargs or have a default value
                 except IndexError:
@@ -152,22 +152,28 @@ def fingerprint(fn, keys=None, ignore=None):
 
                     # It doesn't exist, so default to None
                     except IndexError:
-                        hash_list.append(None)
+                        value = None
 
                     else:
                         if param in kwargs:
-                            hash_list.append(kwargs[param])
+                            value = kwargs[param]
                         else:
-                            hash_list.append(default_values.get(param))
+                            value = default_values.get(param)
 
         # It may exist in **kwargs
         # Extra hashing is required otherwise args[0] == kwargs[0]
         else:
-            hashable_key = '__{}__'.format(key)
+            hash_list.append('__{}__'.format(key))
             if key in kwargs:
-                hash_list += [hashable_key, kwargs[key]]
+                value = kwargs[key]
             else:
-                hash_list += [hashable_key, default_values.get(key)]
+                value = default_values.get(key)
+
+        # Generators can cause cache collisons, so disable them
+        if isinstance(value, GeneratorType):
+            raise TypeError("unhashable function input type 'generator'")
+
+        hash_list.append(value)
 
     try:
         return tuple(map(hash, hash_list))
