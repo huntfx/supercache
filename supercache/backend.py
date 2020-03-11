@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 
-class MemoryCache(object):
+class DictCache(object):
     """Memory based caching."""
 
     Result = 0

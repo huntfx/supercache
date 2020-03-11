@@ -6,7 +6,7 @@ from functools import partial, wraps
 
 from .fingerprint import fingerprint
 from .utils import *
-from .backend import MemoryCache
+from .backend import *
 
 
 __version__ = '1.2.0'
@@ -138,7 +138,7 @@ class Memoize(object):
 
 
 class Cache(object):
-    def __init__(self, group=None, type=MemoryCache):
+    def __init__(self, group=None, type=DictCache):
         self.group = group
         self.type = type
         self.data = self.type.data[self.group]
@@ -185,14 +185,14 @@ class Cache(object):
             self.data[self.type.Result].clear()
             self.data[self.type.Result].update(defaults[self.type.Result])
             self.data[self.type.Accessed].clear()
-            self.data[self.type.Accessed].update(defaults[MemoryCache.Accessed])
+            self.data[self.type.Accessed].update(defaults[self.type.Accessed])
             self.data[self.type.Size].clear()
-            self.data[self.type.Size].update(defaults[MemoryCache.Size])
-            self.data[self.type.Order][:] = defaults[MemoryCache.Order]
+            self.data[self.type.Size].update(defaults[self.type.Size])
+            self.data[self.type.Order][:] = defaults[self.type.Order]
             self.data[self.type.Hits].clear()
-            self.data[self.type.Hits].update(defaults[MemoryCache.Hits])
+            self.data[self.type.Hits].update(defaults[self.type.Hits])
             self.data[self.type.Misses].clear()
-            self.data[self.type.Misses].update(defaults[MemoryCache.Misses])
+            self.data[self.type.Misses].update(defaults[self.type.Misses])
 
         # Remove cache for specific execution
         elif args or kwargs:
