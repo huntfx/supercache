@@ -11,13 +11,13 @@ class DictCache(object):
     Hits = 4
     Misses = 5
 
-    defaults = lambda: [
+    defaults = staticmethod(lambda: [
         {},  # Result
         {},  # Accessed
         {None: 0},  # Size
         [],  # Order
         defaultdict(int),  # Hits
         defaultdict(int),  # Misses
-    ]
+    ])
 
-    data = defaultdict(defaults)
+    data = defaultdict(defaults.__func__)
