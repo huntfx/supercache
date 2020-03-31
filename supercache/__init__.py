@@ -138,10 +138,13 @@ class Memoize(object):
 
 
 class Cache(object):
-    def __init__(self, group=None, type=DictCache):
+    def __init__(self, group=None, type=DictCache, timeout=None, size=None):
         self.group = group
         self.type = type
         self.data = self.type.data[self.group]
+
+        self.timeout = timeout
+        self.size = size
 
     def __call__(self, *args, **kwargs):
         """Create a new memoize instance."""
@@ -153,6 +156,10 @@ class Cache(object):
         new.cache_order = self.data[self.type.Order]
         new.cache_hits = self.data[self.type.Hits]
         new.cache_misses = self.data[self.type.Misses]
+        if new.timeout is None:
+            new.timeout = self.timeout
+        if new.size is None:
+            new.size = self.size
         return new
 
     def _delete_uid(self, uid):
