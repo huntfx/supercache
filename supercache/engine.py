@@ -150,7 +150,7 @@ class Memory(object):
                 self._next_ttl = float('inf')
                 for key in tuple(self.data['result']):
                     if self.expired(key, _current_time=current_time):
-                        self.remove(key)
+                        self.delete(key)
                     elif key in self.data['ttl']:
                         self._next_ttl = min(self._next_ttl, self.data['ttl'][key])
 
