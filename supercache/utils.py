@@ -69,7 +69,6 @@ def extract_decorated_func(wrap):
 
     Source: https://stackoverflow.com/a/43506509/2403000
     """
-
     try:
         return wrap.__wrapped__
     except AttributeError:

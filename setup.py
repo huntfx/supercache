@@ -20,7 +20,7 @@ setup(
     packages = find_packages(),
     version = version,
     license='MIT',
-    description = 'Easy to use and intuitive caching for functions.',
+    description = 'Easy to use caching decorator for functions and methods.',
     long_description=readme,
     long_description_content_type='text/markdown',
     author = 'Peter Hunt',
@@ -28,7 +28,7 @@ setup(
     url = 'https://github.com/Peter92/supercache',
     download_url = 'https://github.com/Peter92/supercache/archive/{}.tar.gz'.format(version),
     project_urls={
-        #'Documentation': 'https://github.com/Peter92/supercache/wiki',
+        'Documentation': 'https://github.com/Peter92/supercache/wiki',
         'Source': 'https://github.com/Peter92/supercache',
         'Issues': 'https://github.com/Peter92/supercache/issues',
     },
@@ -52,6 +52,7 @@ setup(
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
     ],
     python_requires=('>=2.7, !=3.0.*, !=3.1.*, !=3.2.*')
 )

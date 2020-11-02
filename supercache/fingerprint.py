@@ -14,7 +14,6 @@ except AttributeError:
 
 def default_keys(func, parameters, args, kwargs, kwonlyargs):
     """Generate the default request list."""
-
     arg_count = max(len(parameters), len(args))
     keys = list(range(arg_count))
     for kwonlyarg in kwonlyargs:
@@ -38,7 +37,6 @@ def parse_key_list(lst, func, parameters, args, kwargs, kwonlyargs):
     There is a bit of overhead of adding to separate sets, as sorting
     with both str and int doesn't work.
     """
-
     ints = set()
     strs = set()
     for key in lst:
@@ -86,7 +84,6 @@ def fingerprint(fn, keys=None, ignore=None):
     """Generate a unique fingerprint for the function.
     fn must be a functools.partial instance with the arguments provided.
     """
-
     func = fn.func
     args = fn.args
     kwargs = fn.keywords
@@ -176,7 +173,7 @@ def fingerprint(fn, keys=None, ignore=None):
         hash_list.append(value)
 
     try:
-        return tuple(map(hash, hash_list))
+        return ';'.join(map(str, map(hash, hash_list)))
 
     # Raise custom exception message
     except TypeError:
