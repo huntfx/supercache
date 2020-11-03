@@ -1,10 +1,11 @@
 # supercache
 Easy to use and intuitive caching for functions and methods.
 
-Supercache has been designed to work as a decorator where it can be quickly added to any number of functions, while still allowing for the fine tuning of settings on an individual basis.
+Supercache has been designed to work as a conveniance decorator, to provide almost instant repeat executions for any decorated function. Each decorator can be given unique settings, such as which parameters to generate a unique key with, and how long the cache should exist for.
+
+Please note that using the decorator does add some overhead (roughly 1 second per 40,000 executions) as it was designed for conveniance and stability over performance. It's possible that caching a very simple function could result in worse performance.
 
 ## Installation
-
     pip install supercache
 
 ## Usage
@@ -31,10 +32,25 @@ def function(x, y=None):
 def function(x, y=None, *args, **kwargs):
     return(x, y)
 
+
 # Set up a custom cache engine
-from supercache import Cacbe
 from supercache.engine import Memory
+
 cache = Cache(engine=Memory(mode=Memory.FIFO, ttl=600, count=100000, size=100000))
+
+
+# Manually handle cache to reduce the decorator overhead
+# This is in danger of collisions if the key is not unique
+from supercache.exceptions import CacheError
+
+def function(x, y=None):
+    key = 'function;{};{}'.format(x, y)
+    try:
+        return cache.get(key)
+    except CacheError:
+        value = (x, y)
+        cache.put(key, value)
+        return value
 ```
 
 ### Supported Types
