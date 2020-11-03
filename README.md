@@ -1,9 +1,9 @@
 # supercache
-Easy to use and intuitive caching for functions and methods.
+Easy to use caching for functions and methods.
 
-Supercache has been designed to work as a conveniance decorator, to provide almost instant repeat executions for any decorated function. Each decorator can be given unique settings, such as which parameters to generate a unique key with, and how long the cache should exist for.
+Supercache has been designed as a decorator to work with functions and methods, to provide almost instant repeat executions with only a single extra line of code. It acts as an interface to the cache engine, which can be anything from caching in memory to using Redis (provided it's been coded).
 
-Please note that using the decorator does add some overhead (roughly 1 second per 40,000 executions) as it was designed for conveniance and stability over performance. It's possible that caching a very simple function could result in worse performance.
+Please note that using the decorator adds a small amount of overhead as it was designed for conveniance and stability over performance. It's possible that caching a very simple function could result in worse performance (it roughly takes 1 second per 40,000 executions).
 
 ## Installation
     pip install supercache
@@ -77,24 +77,7 @@ func = cache()(lambda: None)
 
 ## API Reference
 
-### engine.Memory(_mode=LRU, ttl=None, count=None, size=None_)
-
-#### Mode
-Set the mode for purging cache. Options are FIFO (first in first out), FILO (first in last out), LRU (least recently used), MRU (most recently used) or LFU (least frequently used).
-
-#### ttl
-Set how many seconds until the cache is invalidated.
-
-#### count
-Set the maximum amount of cached results.
-
-#### size
-Set the maximum size of the cache in bytes. This a soft limit, where the memory will be allocated first, then older cache will be deleted until it is back under the limit.
-
-The latest execution will always be cached, even if the maximum size is set to smaller than the result.
-
-
-### cache(_keys=None, ignore=None, ttl=None, size=None, precalculate=False_)
+### @cache(_keys=None, ignore=None, ttl=None, precalculate=False_)
 
 #### keys
 Set which parameters of the function to use in generating the cache key. All available parameters will be used by default.
@@ -157,8 +140,25 @@ Get if the cache exists for a key or function.
 - `cache.exists(func)`: If any execution of `func` exists in cache.
 - `cache.exists(func, 1, b=2)`: If `func(1, b=2)` exists in cache.
 
+### engine.Memory(_mode=LRU, ttl=None, count=None, size=None_)
+
+#### Mode
+Set the mode for purging cache. Options are FIFO (first in first out), FILO (first in last out), LRU (least recently used), MRU (most recently used) or LFU (least frequently used).
+
+#### ttl
+Set how many seconds until the cache is invalidated.
+
+#### count
+Set the maximum amount of cached results.
+
+#### size
+Set the maximum size of the cache in bytes. This a soft limit, where the memory will be allocated first, then older cache will be deleted until it is back under the limit.
+
+The latest execution will always be cached, even if the maximum size is set to smaller than the result.
+
 ## Planned
 - Support for SQLite
+- Support for memcached
 - Support for Redis
 
 ## Limitations
