@@ -114,31 +114,48 @@ If the function being cached is a generator, setting this to `True` will convert
 
 The reason for this is the generator caching has a lot of overhead, which could become very noticable when calling a simple generator thousands of times.
 
-### cache.delete(_func=None, *args, **kwargs_)
+### cache.get(_key_):
+__Alias:__ `cache[key]`
+
+Read an item of cache, or raise an error if it doesn't exist.
+
+### cache.put(_key, value, **kwargs_):
+__Alias:__ `cache[key] = value`
+
+Set a new item of cache.
+
+### cache.delete(_key=None, *args, **kwargs_)
+__Alias:__ `del cache[key]`
+
+Delete cache for a key or function.
 - `cache.delete()`: Delete all cached data.
-- `cache.delete(func)`: Delete all cached data for `func`.
+- `cache.delete(key)`: Delete cached data for a specific `key`.
+- `cache.delete(func)`: Delete cached data for every execution of `func`.
 - `cache.delete(func, 1, b=2)`: Delete the cached data for `func(1, b=2)`.
 
-### cache.hits(_func=None, *args, **kwargs_)
-Return a count of how many times the cache was read for the given parameters.
+### cache.hits(_key=None, *args, **kwargs_)
+Return a count of how many times the cache was read for a key or function.
 
 - `cache.hits()`: Number of total cache hits.
-- `cache.hits(func)`: Number of cache hits for `func`.
+- `cache.hits(key)`: Number of hits for a specific `key`.
+- `cache.hits(func)`: Number of cache hits for every execution of `func`.
 - `cache.hits(func, 1, b=2)`: Number of cache hits specifically for `func(1, b=2)`.
 
-### cache.misses(_func=None, *args, **kwargs_)
-Return a count of how many times the cache was generated for the given parameters.
+### cache.misses(_key=None, *args, **kwargs_)
+Return a count of how many times the cache was generated for a key or function.
 
 - `cache.misses()`: Number of total cache misses.
-- `cache.misses(func)`: Number of cache misses for `func`.
+- `cache.misses(key)`: Number of misses for a specific `key`.
+- `cache.misses(func)`: Number of cache misses for every execution of `func`.
 - `cache.misses(func, 1, b=2)`: Number of cache misses specifically for `func(1, b=2)`.
 
-### cache.exists(_func=None, *args, **kwargs_)
-Get if the cache exists for a particular input.
+### cache.exists(_key=None, *args, **kwargs_)
+Get if the cache exists for a key or function.
 
 - `cache.exists()`: If any cache exists.
-- `cache.exists(func)`: If any cache exists for `func`.
-- `cache.exists(func, 1, b=2)`: If any cache exists specifically for `func(1, b=2)`.
+- `cache.exists(key)`: If `key` exists in cache.
+- `cache.exists(func)`: If any execution of `func` exists in cache.
+- `cache.exists(func, 1, b=2)`: If `func(1, b=2)` exists in cache.
 
 ## Planned
 - Support for SQLite
