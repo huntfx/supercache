@@ -1,3 +1,5 @@
+__all__ = ['Cache', 'cache', 'engine']
+
 import base64
 import inspect
 import os
@@ -6,10 +8,9 @@ import time
 from functools import partial, wraps
 from types import FunctionType, MethodType
 
-from . import exceptions
+from . import engine, exceptions
 from .fingerprint import fingerprint
 from .utils import *
-from .engine import Memory
 from .exceptions import CacheError
 
 
@@ -26,7 +27,7 @@ class Memoize(object):
 
     __slots__ = ['cache', 'keys', 'ignore', 'ttl', 'precalculate']
 
-    def __init__(self, cache, keys=None, ignore=None, ttl=None, precalculate=False):
+    def __init__(self, cache, keys=None, ignore=None, ttl=None, precalculate=None):
         """Define the caching options.
 
         The cache key is generated from a function and its arguments,
@@ -50,13 +51,18 @@ class Memoize(object):
             Set to None for infinite.
         precalculate (bool):
             Convert a generator to a tuple.
+            This is automatically done for engines that require
+            serialisation.
         """
 
         self.cache = cache
         self.keys = keys
         self.ignore = ignore
         self.ttl = ttl
-        self.precalculate = precalculate
+        if precalculate is None:
+            self.precalculate = not isinstance(engine, engine.Memory)
+        else:
+            self.precalculate = precalculate
 
     def __call__(self, func):
 
@@ -74,7 +80,7 @@ class Memoize(object):
 
             # Fetch result from cache
             try:
-                result = self.cache.get(uid)
+                return self.cache.get(uid)
 
             # Execute the function
             except CacheError:
@@ -86,8 +92,7 @@ class Memoize(object):
                 else:
                     result = f()
                 self.cache.put(uid, result, ttl=self.ttl)
-
-            return result
+                return result
         return wrapper
 
 
@@ -101,7 +106,7 @@ class Cache(object):
     effect on a returned value).
     """
 
-    def __init__(self, group='', engine=Memory()):
+    def __init__(self, group='', engine=engine.Memory()):
         """Create the cache interface.
 
         Parameters:

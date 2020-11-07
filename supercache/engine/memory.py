@@ -1,11 +1,15 @@
+
+
 import time
 from collections import defaultdict
 
-from . import exceptions, utils
+from .. import exceptions, utils
 
 
 class Memory(object):
-    """Memory based caching."""
+    """Cache directly in memory.
+    This may not be thread safe in some circumstances.
+    """
 
     FIFO = FirstInFirstOut = 0
     FILO = FirstInLastOut = 1
@@ -51,7 +55,7 @@ class Memory(object):
 
     def __iter__(self):
         """Iterate through all the keys."""
-        self.purge()
+        self._purge()
         return iter(self.data['result'])
 
     def exists(self, key):
@@ -79,7 +83,7 @@ class Memory(object):
         exist.
         """
         if purge:
-            self.purge()
+            self._purge()
 
         if not self.exists(key):
             raise exceptions.CacheNotFound(key)
@@ -97,6 +101,9 @@ class Memory(object):
         """Add a new value to cache.
         This will overwrite any old cache with the same key.
         """
+        if ttl is None:
+            ttl = self.ttl
+
         self.data['result'][key] = value
         self.data['misses'][key] += 1
 
@@ -111,39 +118,47 @@ class Memory(object):
         self.data['insert'][key] = self.data['access'][key] = current_time
 
         # Set timeout
-        if ttl is None and self.ttl is None:
+        if ttl is None:
             if key in self.data['ttl']:
                 del self.data['ttl'][key]
         else:
-            if ttl is None:
-                ttl = self.ttl
             self.data['ttl'][key] = current_time + ttl
             self._next_ttl = min(self._next_ttl, self.data['ttl'][key])
 
         # Clean old keys
         if purge:
-            self.purge(ignore=key)
+            self._purge(ignore=key)
 
     def delete(self, key):
         """Delete an item of cache.
-        This will not remove the hits, misses or ttl.
+        This will not remove the hits or misses.
         """
         if key in self.data['result']:
             del self.data['result'][key]
             del self.data['insert'][key]
             del self.data['access'][key]
+            if key in self.data['ttl']:
+                del self.data['ttl'][key]
             if self.size is not None:
                 self.data['size'][None] -= self.data['size'].pop(key)
             return True
         return False
 
-    def purge(self, ignore=None):
+    def hits(self, key):
+        """Return the number of hits on an item of cache."""
+        return self.data['hits'].get(key, 0)
+
+    def misses(self, key):
+        """Return the number of misses on an item of cache."""
+        return self.data['misses'].get(key, 0)
+
+    def _purge(self, ignore=None):
         """Remove old cache."""
         count = self.count
         size = self.size
-        purged = []
+        purged = 0
 
-        # Check timeouts
+        # Delete expired
         if self.data['ttl']:
             current_time = time.time()
             if current_time > self._next_ttl:
@@ -155,9 +170,9 @@ class Memory(object):
                         self._next_ttl = min(self._next_ttl, self.data['ttl'][key])
 
         # Determine if we can skip
-        if self.count is not None and len(self.data['result']) < self.count:
+        if count is not None and len(self.data['result']) < count:
             count = None
-        if self.size is not None and self.data['size'][None] < self.size:
+        if size is not None and self.data['size'][None] < size:
             size = None
 
         if count is None and size is None:
@@ -165,43 +180,33 @@ class Memory(object):
 
         # Order the keys
         if self.mode == self.FirstInFirstOut:
-            sort_key = lambda k: self.data['insert'][k]
+            order_by = lambda k: self.data['insert'][k]
         elif self.mode == self.FirstInLastOut:
-            sort_key = lambda k: -self.data['insert'][k]
+            order_by = lambda k: -self.data['insert'][k]
         elif self.mode == self.LeastRecentlyUsed:
-            sort_key = lambda k: self.data['access'][k]
+            order_by = lambda k: self.data['access'][k]
         elif self.mode == self.MostRecentlyUsed:
-            sort_key = lambda k: -self.data['access'][k]
+            order_by = lambda k: -self.data['access'][k]
         elif self.mode == self.LeastFrequentlyUsed:
-            sort_key = lambda k: self.data['hits'][k]
+            order_by = lambda k: self.data['hits'][k]
         else:
             raise NotImplementedError(self.mode)
-        ordered_keys = sorted(self.data['result'], key=sort_key, reverse=True)
+        ordered_keys = sorted(self.data['result'], key=order_by, reverse=True)
 
         # Remove the cache data
-        if self.count is not None:
-            for key in ordered_keys[self.count:]:
+        if count is not None:
+            for key in ordered_keys[count:]:
                 if key == ignore:
                     continue
                 self.delete(key)
-                purged.append(key)
-
-        if self.size is not None:
+                purged += 1
+        if size is not None:
             total_size = 0
             for key in ordered_keys:
                 if key == ignore:
                     continue
                 total_size += self.data['size'][key]
-                if total_size > self.size:
+                if total_size > size:
                     self.delete(key)
-                    purged.append(key)
-
+                    purged += 1
         return purged
-
-    def hits(self, key):
-        """Return the number of hits on an item of cache."""
-        return self.data['hits'].get(key, 0)
-
-    def misses(self, key):
-        """Return the number of misses on an item of cache."""
-        return self.data['misses'].get(key, 0)
