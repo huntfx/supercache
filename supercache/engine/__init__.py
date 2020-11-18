@@ -12,5 +12,6 @@ It may optionally have these methods:
     misses(key): How many cache misses have happened
 """
 
+from .memcached import Memcached
 from .memory import Memory
 from .sqlite import SQLite

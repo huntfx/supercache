@@ -1,5 +1,3 @@
-
-
 import time
 from collections import defaultdict
 
@@ -8,7 +6,8 @@ from .. import exceptions, utils
 
 class Memory(object):
     """Cache directly in memory.
-    This may not be thread safe in some circumstances.
+    This is by far the fastest solution, but the cache cannot be shared
+    outside the current process.
     """
 
     FIFO = FirstInFirstOut = 0
@@ -17,7 +16,7 @@ class Memory(object):
     MRU = MostRecentlyUsed = 3
     LFU = LeastFrequentlyUsed = 4
 
-    def __init__(self, mode=LRU, ttl=None, count=None, size=None):
+    def __init__(self, ttl=None, mode=LRU, count=None, size=None):
         """Create a new engine.
 
         Parameters:
@@ -25,7 +24,7 @@ class Memory(object):
             ttl (int): Time the cache is valid for.
                 Set to None for infinite.
             count (int): Maximum cache results to store.
-                Set to None for infinite.
+                Set to None or 0 for infinite.
             size (int): Maximum size of cache in bytes.
                 This is a soft limit, where the memory will be
                 allocated first, and any extra cache purged later.
@@ -118,9 +117,11 @@ class Memory(object):
         self.data['insert'][key] = self.data['access'][key] = current_time
 
         # Set timeout
-        if ttl is None:
-            if key in self.data['ttl']:
+        if ttl is None or ttl <= 0:
+            try:
                 del self.data['ttl'][key]
+            except KeyError:
+                pass
         else:
             self.data['ttl'][key] = current_time + ttl
             self._next_ttl = min(self._next_ttl, self.data['ttl'][key])

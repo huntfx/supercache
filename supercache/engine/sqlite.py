@@ -7,10 +7,21 @@ import time
 from .. import exceptions, utils
 
 
+def _encode(value):
+    """Encode any Python object."""
+    return base64.b64encode(pickle.dumps(value))
+
+
+def _decode(value):
+    """Decode any Python object."""
+    return pickle.loads(base64.b64decode(value))
+
+
 class SQLite(object):
     """Local database caching.
-    This is considerably slower than the memory caching, but will be
-    thread safe.
+    This is slower than the local memory based caching, but has the
+    advantage of being persistent. This should be used if the cache is
+    to be shared across multiple processes on the same machine.
     """
 
     FIFO = FirstInFirstOut = 0
@@ -20,8 +31,25 @@ class SQLite(object):
     LFU = LeastFrequentlyUsed = 4
 
     def __init__(self, database=':memory:', mode=LRU, ttl=None, count=None, size=None):
+        """Create a new engine.
+
+        Parameters:
+            data (str): Path to the database.
+            mode (int): How to purge the old keys.
+            ttl (int): Time the cache is valid for.
+                Set to None for infinite.
+            count (int): Maximum cache results to store.
+                Set to None or 0 for infinite.
+            size (int): Maximum size of cache in bytes.
+                This is a soft limit, where the memory will be
+                allocated first, and any extra cache purged later.
+                The latest cache item will always be stored.
+                Set to None for infinite.
+        """
         self.connection = sqlite3.connect(database)
         cursor = self.connection.cursor()
+
+        # Create tables on first run
         cursor.execute(
             'CREATE TABLE IF NOT EXISTS data ('
                 'key PRIMARY KEY,'
@@ -53,14 +81,6 @@ class SQLite(object):
         # Don't allow cross version caches
         # Pickle may have incompatibilities between versions
         self._key_prefix = '{}.{}.'.format(sys.version_info.major, sys.version_info.minor)
-
-    def _encode(self, value):
-        """Encode any Python object."""
-        return base64.b64encode(pickle.dumps(value))
-
-    def _decode(self, value):
-        """Decode any Python object."""
-        return pickle.loads(base64.b64decode(value))
 
     def keys(self):
         """Get the current stored cache keys."""
@@ -135,11 +155,11 @@ class SQLite(object):
         cursor.execute('UPDATE stats SET hits = hits + 1 WHERE key = ?', (key,))
 
         if encoded:
-            return self._decode(value)
+            return _decode(value)
         return value
 
     def put(self, key, value, ttl=None, purge=True, _cursor=None):
-        """Add a new value to cache.
+        """Write a new value to the cache.
         This will overwrite any old cache with the same key.
         """
         key = self._key_prefix + key
@@ -167,7 +187,7 @@ class SQLite(object):
             data['value'] = value
             data['encoded'] = False
         else:
-            data['value'] = self._encode(value)
+            data['value'] = _encode(value)
             data['encoded'] = True
 
         # Only calculate size if it's being tracked
@@ -200,7 +220,7 @@ class SQLite(object):
             self._purge(ignore=key, _cursor=cursor)
 
     def delete(self, key, _cursor=None):
-        """Delete an item of cache.
+        """Delete an item of cache if it exists.
         This will not remove the hits or misses.
         """
         key = self._key_prefix + key

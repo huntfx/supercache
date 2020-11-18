@@ -7,28 +7,27 @@ import time
 from functools import partial
 
 sys.path.append(os.path.normpath(__file__).rsplit(os.path.sep, 2)[0])
-from supercache import *
+from supercache import Cache, engine
+
+
+cache = Cache(engine=engine.SQLite())
 
 
 class TestBase(unittest.TestCase):
     def setUp(self):
         self.cache = cache
-        self.cache_large = Cache(engine=engine.Memory(size=100000))
-        self.cache_medium = Cache(engine=engine.Memory(size=10000))
-        self.cache_small = Cache(engine=engine.Memory(size=0))
-        self.cache_long = Cache(engine=engine.Memory(ttl=100000))
-        self.cache_short = Cache(engine=engine.Memory(ttl=0.05))
+        self.cache_large = Cache(engine=engine.SQLite(size=100000))
+        self.cache_medium = Cache(engine=engine.SQLite(size=10000))
+        self.cache_small = Cache(engine=engine.SQLite(size=0))
+        self.cache_long = Cache(engine=engine.SQLite(ttl=100000))
+        self.cache_short = Cache(engine=engine.SQLite(ttl=0.05))
 
     def tearDown(self):
         for cache in (self.cache, self.cache_large, self.cache_medium,
                 self.cache_small, self.cache_long, self.cache_short):
             cache.delete()
-            if isinstance(cache.engine, engine.Memory):
-                cache.engine.data['hits'].clear()
-                cache.engine.data['misses'].clear()
-            elif isinstance(cache.engine, engine.SQLite):
-                cursor = cache.engine.connection.cursor()
-                cursor.execute('DELETE FROM stats')
+            cursor = cache.engine.connection.cursor()
+            cursor.execute('DELETE FROM stats')
 
 
 class TestFunction(TestBase):
