@@ -25,12 +25,12 @@ setup(
     long_description_content_type='text/markdown',
     author = 'Peter Hunt',
     author_email='peter@huntfx.uk',
-    url = 'https://github.com/Peter92/supercache',
-    download_url = 'https://github.com/Peter92/supercache/archive/{}.tar.gz'.format(version),
+    url = 'https://github.com/huntfx/supercache',
+    download_url = 'https://github.com/huntfx/supercache/archive/{}.tar.gz'.format(version),
     project_urls={
-        'Documentation': 'https://github.com/Peter92/supercache/wiki',
-        'Source': 'https://github.com/Peter92/supercache',
-        'Issues': 'https://github.com/Peter92/supercache/issues',
+        'Documentation': 'https://github.com/huntfx/supercache/wiki',
+        'Source': 'https://github.com/huntfx/supercache',
+        'Issues': 'https://github.com/huntfx/supercache/issues',
     },
     keywords = [
         'cache', 'caching', 'memoise', 'memoize', 'store',
