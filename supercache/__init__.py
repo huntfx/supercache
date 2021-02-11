@@ -1,17 +1,12 @@
-__all__ = ['Cache', 'cache', 'engine']
+__all__ = ['Cache', 'cache', 'engine', 'exceptions']
 
-import base64
 import inspect
-import os
-import sys
-import time
 from functools import partial, wraps
 from types import FunctionType, MethodType
 
 from . import engine, exceptions
 from .fingerprint import fingerprint
 from .utils import *
-from .exceptions import CacheError
 
 
 __version__ = '2.0.0'
@@ -83,7 +78,7 @@ class Memoize(object):
                 return self.cache.get(uid)
 
             # Execute the function
-            except CacheError:
+            except exceptions.CacheError:
                 if inspect.isgeneratorfunction(func):
                     if self.precalculate:
                         result = tuple(f())
