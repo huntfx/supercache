@@ -8,6 +8,8 @@ class Memory(object):
     """Cache directly in memory.
     This is by far the fastest solution, but the cache cannot be shared
     outside the current process.
+    This is not completely thread safe, but care has been taken to
+    avoid any errors from stopping the code working.
     """
 
     FIFO = FirstInFirstOut = 0
@@ -74,7 +76,10 @@ class Memory(object):
             return False
         if _current_time is None:
             _current_time = time.time()
-        return self.data['ttl'][key] <= _current_time
+        try:
+            return self.data['ttl'][key] <= _current_time
+        except KeyError:
+            return True
 
     def get(self, key, purge=False):
         """Get the value belonging to a key.
@@ -91,10 +96,13 @@ class Memory(object):
         if not purge and self.expired(key):
             raise exceptions.CacheExpired(key)
 
-        self.data['hits'][key] += 1
-        self.data['access'][key] = time.time()
+        try:
+            self.data['hits'][key] += 1
+            self.data['access'][key] = time.time()
 
-        return self.data['result'][key]
+            return self.data['result'][key]
+        except KeyError:
+            raise exceptions.CacheExpired(key)
 
     def put(self, key, value, ttl=None, purge=True):
         """Add a new value to cache.
@@ -104,7 +112,10 @@ class Memory(object):
             ttl = self.ttl
 
         self.data['result'][key] = value
-        self.data['misses'][key] += 1
+        try:
+            self.data['misses'][key] += 1
+        except KeyError:
+            self.data['misses'][key] = 1
 
         # Calculate size
         if self.size is not None:
@@ -135,13 +146,16 @@ class Memory(object):
         This will not remove the hits or misses.
         """
         if key in self.data['result']:
-            del self.data['result'][key]
-            del self.data['insert'][key]
-            del self.data['access'][key]
-            if key in self.data['ttl']:
-                del self.data['ttl'][key]
-            if self.size is not None:
-                self.data['size'][None] -= self.data['size'].pop(key)
+            try:
+                del self.data['result'][key]
+                del self.data['insert'][key]
+                del self.data['access'][key]
+                if key in self.data['ttl']:
+                    del self.data['ttl'][key]
+                if self.size is not None:
+                    self.data['size'][None] -= self.data['size'].pop(key)
+            except KeyError:
+                pass
             return True
         return False
 
@@ -168,7 +182,10 @@ class Memory(object):
                     if self.expired(key, _current_time=current_time):
                         self.delete(key)
                     elif key in self.data['ttl']:
-                        self._next_ttl = min(self._next_ttl, self.data['ttl'][key])
+                        try:
+                            self._next_ttl = min(self._next_ttl, self.data['ttl'][key])
+                        except KeyError:
+                            pass
 
         # Determine if we can skip
         if count is not None and len(self.data['result']) < count:
