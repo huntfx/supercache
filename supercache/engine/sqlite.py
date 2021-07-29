@@ -153,6 +153,7 @@ class SQLite(object):
         # Update stats
         cursor.execute('UPDATE data SET accessed = ? WHERE key = ?', (time.time(), key))
         cursor.execute('UPDATE stats SET hits = hits + 1 WHERE key = ?', (key,))
+        self.connection.commit()
 
         if encoded:
             return _decode(value)
@@ -214,6 +215,7 @@ class SQLite(object):
         cursor.execute('UPDATE stats SET misses = misses + 1 WHERE key = ?', (key,))
         if not cursor.rowcount:
             cursor.execute('INSERT INTO stats (key, misses) VALUES (?, 1)', (key,))
+        self.connection.commit()
 
         # Clean old keys
         if purge:
@@ -227,6 +229,7 @@ class SQLite(object):
         cursor = _cursor or self.connection.cursor()
 
         cursor.execute('DELETE FROM data WHERE key = ?', (key,))
+        self.connection.commit()
         return bool(cursor.rowcount)
 
     def hits(self, key, _cursor=None):
@@ -323,4 +326,6 @@ class SQLite(object):
             )
             purged += cursor.rowcount
 
+        if purged:
+            self.connection.commit()
         return purged

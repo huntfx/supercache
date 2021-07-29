@@ -1,15 +1,25 @@
+import hashlib
 import inspect
 import sys
 import random
 import re
 from functools import partial
-from types import GeneratorType
+from types import GeneratorType, MethodType
 
 try:
     Pattern = re.Pattern
 except AttributeError:
     # < Python 3.7
     Pattern = re._pattern_type
+
+
+def alternative_hash(value):
+    """Quick way of doing a hash.
+    This used to be hash(), but in Python 3 it is seeded and returns
+    different values.
+    Security is not an issue here so md5 is used as its cheap.
+    """
+    return hashlib.md5(repr(value).encode('utf-8')).hexdigest()
 
 
 def default_keys(func, parameters, args, kwargs, kwonlyargs):
@@ -120,8 +130,22 @@ def fingerprint(fn, keys=None, ignore=None):
         ignore = parse_key_list(ignore, func, parameters, args, kwargs, kwonlydefaults)
         keys = [key for key in keys if key not in ignore]
 
+    # Convert the function object to a unique name
+    try:
+        try:
+            func_name = func.__qualname__
+        except AttributeError:
+            func_name = func.__name__
+    except AttributeError:
+        func_name = str(func)
+    try:
+        namespace = inspect.stack()[-1][0].f_globals['__file__']
+    except (KeyError, IndexError, AttributeError):
+        namespace = '__main__'
+    func_name = namespace + '.' + func_name
+
     # Build a list of the given arguments
-    hash_list = [func, tuple(keys)]
+    hash_list = [func_name, tuple(keys)]
     for key in keys:
         if isinstance(key, int):
             # Get the argument at the index
@@ -173,7 +197,7 @@ def fingerprint(fn, keys=None, ignore=None):
         hash_list.append(value)
 
     try:
-        return ';'.join(map(str, map(hash, hash_list)))
+        return ';'.join(map(str, map(alternative_hash, hash_list)))
 
     # Raise custom exception message
     except TypeError:
