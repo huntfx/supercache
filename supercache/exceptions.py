@@ -8,3 +8,7 @@ class CacheExpired(CacheError):
 
 class CacheNotFound(CacheError):
     pass
+
+
+class CacheDatabaseLocked(CacheError):
+    pass

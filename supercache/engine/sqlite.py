@@ -3,6 +3,7 @@ import pickle
 import sqlite3
 import sys
 import time
+from functools import wraps
 
 from .. import exceptions, utils
 
@@ -15,6 +16,22 @@ def _encode(value):
 def _decode(value):
     """Decode any Python object."""
     return pickle.loads(base64.b64decode(value))
+
+
+def ignore_locked_db(func):
+    """SQlite is prone to getting locked.
+    Instead of causing a traceback, this will ensure the function is
+    still executed, even if the cache cannot be read/written to.
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except sqlite3.OperationalError as e:
+            if str(e) == 'database is locked':
+                raise exceptions.CacheDatabaseLocked
+            raise
+    return wrapper
 
 
 class SQLite(object):
@@ -30,6 +47,7 @@ class SQLite(object):
     MRU = MostRecentlyUsed = 3
     LFU = LeastFrequentlyUsed = 4
 
+    @ignore_locked_db
     def __init__(self, database=':memory:', mode=LRU, ttl=None, count=None, size=None):
         """Create a new engine.
 
@@ -86,6 +104,7 @@ class SQLite(object):
         """Get the current stored cache keys."""
         return list(iter(self))
 
+    @ignore_locked_db
     def __iter__(self, _cursor=None):
         """Iterate through all the keys."""
         cursor = _cursor or self.connection.cursor()
@@ -96,6 +115,7 @@ class SQLite(object):
         for key, in cursor.fetchall():
             yield key[prefix_len:]
 
+    @ignore_locked_db
     def exists(self, key, _cursor=None):
         """Find if cache currently exists for a given key.
         Any key past its ttl will be removed.
@@ -116,6 +136,7 @@ class SQLite(object):
             return False
         return True
 
+    @ignore_locked_db
     def expired(self, key, _cursor=None):
         """Determine is a key has expired."""
         key = self._key_prefix + key
@@ -128,6 +149,7 @@ class SQLite(object):
             raise exceptions.CacheNotFound(key)
         return ttl is not None and ttl < time.time()
 
+    @ignore_locked_db
     def get(self, key, purge=False, _cursor=None):
         """Get the value belonging to a key.
         An error will be raised if the cache is expired or doesn't
@@ -159,6 +181,7 @@ class SQLite(object):
             return _decode(value)
         return value
 
+    @ignore_locked_db
     def put(self, key, value, ttl=None, purge=True, _cursor=None):
         """Write a new value to the cache.
         This will overwrite any old cache with the same key.
@@ -221,6 +244,7 @@ class SQLite(object):
         if purge:
             self._purge(ignore=key, _cursor=cursor)
 
+    @ignore_locked_db
     def delete(self, key, _cursor=None):
         """Delete an item of cache if it exists.
         This will not remove the hits or misses.
@@ -232,6 +256,7 @@ class SQLite(object):
         self.connection.commit()
         return bool(cursor.rowcount)
 
+    @ignore_locked_db
     def hits(self, key, _cursor=None):
         """Return the number of hits on an item of cache."""
         key = self._key_prefix + key
@@ -243,6 +268,7 @@ class SQLite(object):
         except TypeError:
             return 0
 
+    @ignore_locked_db
     def misses(self, key, _cursor=None):
         """Return the number of misses on an item of cache."""
         key = self._key_prefix + key
@@ -254,6 +280,7 @@ class SQLite(object):
         except TypeError:
             return 0
 
+    @ignore_locked_db
     def _purge(self, ignore=None, _cursor=None):
         """Remove old cache."""
         cursor = _cursor or self.connection.cursor()

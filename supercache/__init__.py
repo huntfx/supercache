@@ -9,7 +9,7 @@ from .fingerprint import fingerprint
 from .utils import *
 
 
-__version__ = '2.0.2'
+__version__ = '2.0.3'
 
 
 class Memoize(object):
@@ -86,7 +86,10 @@ class Memoize(object):
                         result = GeneratorCache(f)
                 else:
                     result = f()
-                self.cache.put(uid, result, ttl=self.ttl)
+                try:
+                    self.cache.put(uid, result, ttl=self.ttl)
+                except Exception:
+                    pass
                 return result
         return wrapper
 
