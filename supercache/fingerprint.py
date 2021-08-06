@@ -142,7 +142,7 @@ def fingerprint(fn, keys=None, ignore=None):
         namespace = inspect.stack()[-1][0].f_globals['__file__']
     except (KeyError, IndexError, AttributeError):
         namespace = '__main__'
-    func_name = namespace + '.' + func_name
+    func_name = '{}.{}'.format(namespace, func_name)
 
     # Build a list of the given arguments
     hash_list = [func_name, tuple(keys)]
